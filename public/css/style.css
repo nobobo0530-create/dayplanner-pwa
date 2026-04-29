@@ -1365,3 +1365,210 @@ html, body {
   color: white;
 }
 .overlay-cancel:active, .overlay-ok:active { opacity: 0.7; }
+
+/* ════════════════════════════════════════
+   ★ v3 リデザイン: 3タブ構成
+   ════════════════════════════════════════ */
+
+/* ── 下部タブバー (3タブ) ────────────── */
+.tabbar {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--border);
+  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+  z-index: 100;
+  max-width: 430px;
+  margin: 0 auto;
+}
+.tabbar-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 6px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  color: var(--text2);
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tabbar-btn.active { color: #ef4444; }
+.tabbar-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.tabbar-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  position: relative;
+}
+.tab-badge {
+  display: inline-block;
+  background: #ef4444;
+  color: white;
+  border-radius: 99px;
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 800;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* ── ボトムバー位置調整（タブバー上に） ─ */
+.bottom-bar {
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* ── コンパクト stats フッター ───────── */
+.stats-footer {
+  position: fixed;
+  bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+  left: 12px; right: 12px;
+  max-width: 406px;
+  margin: 0 auto;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+}
+.sf-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.sf-pct {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--green);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.sf-text {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 600;
+}
+.sf-reward-edit {
+  background: var(--card2);
+  border: none;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--text2);
+}
+.sf-reward {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 6px;
+  text-align: center;
+}
+.sf-reward b { color: var(--text); font-weight: 700; }
+
+/* スケジュールタブで stats があるときはボトムバーをさらに上に */
+.stats-footer + .bottom-bar,
+body:has(.stats-footer) .bottom-bar {
+  /* 何もしない (現状の位置でOK) */
+}
+
+/* リスト下に余白 (stats footer + tabbar 用) */
+.list { padding-bottom: 200px; }
+.todo-screen { padding-bottom: 100px; }
+
+/* ── カレンダータブ：月グリッド ────── */
+.cal-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.cal-page-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+.cal-grid-wrap {
+  padding: 8px 12px 100px;
+}
+.cal-grid-dow {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 0 4px;
+}
+.cal-grid-dow-cell {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  padding: 6px 0;
+}
+.cal-grid-dow-cell.is-weekend { color: #ef4444; }
+.cal-grid-dow-cell:nth-child(7) { color: #3b82f6; }  /* 日 */
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  background: var(--card);
+  padding: 8px;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.cal-cell {
+  background: transparent;
+  border: none;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s;
+  padding: 0;
+}
+.cal-cell.empty { cursor: default; }
+.cal-cell:active:not(.empty) { background: var(--card2); }
+.cal-cell-num {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.cal-cell.is-saturday .cal-cell-num { color: #ef4444; }
+.cal-cell.is-sunday .cal-cell-num   { color: #3b82f6; }
+.cal-cell.is-today .cal-cell-num {
+  color: #ef4444;
+  font-weight: 800;
+}
+.cal-cell.is-today {
+  background: rgba(239, 68, 68, 0.08);
+}
+.cal-cell.is-selected {
+  background: var(--text);
+}
+.cal-cell.is-selected .cal-cell-num,
+.cal-cell.is-selected .cal-cell-num { color: var(--card) !important; }
+.cal-cell-dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+.cal-cell.is-selected .cal-cell-dot { background: var(--card); }

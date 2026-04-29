@@ -15,20 +15,21 @@ const S = {
   todos: [],
   templates: [],
   reward: { thresholdPct: 80, durationMin: 30 },
-  view: 'schedule',
+  view: 'schedule',        // 'schedule' | 'timer' | 'result' | 'review' | 'templates' | 'form'
+  tab: 'schedule',         // ★ メインタブ: 'schedule' | 'calendar' | 'todo'
+  calendarMonth: null,     // 'YYYY-MM' (カレンダータブで表示中の月、nullなら S.date の月)
   activeId: null,
   formData: null,
-  formMode: 'task',        // 'task' | 'todo'  (新規追加フォームの初期モード)
+  formMode: 'task',
   shiftNext: true,
   raf: null,
   bgTimer: null,
   // ── アラーム関連 ─────────────────────────
-  alarmTimers: [],         // setTimeout ハンドル一覧
-  alarmModal: null,        // { taskId, kind: 'pre' | 'start' } | null
+  alarmTimers: [],
+  alarmModal: null,
   alarmCheckInterval: null,
   audioCtx: null,
-  // ── カレンダー UI ────────────────────────
-  monthPickerOpen: false,
+  // ── オーバーレイ ─────────────────────────
   rewardSettingOpen: false,
 };
 
@@ -285,113 +286,144 @@ function stats() {
 function tOpts(){const r=[];for(let h=0;h<24;h++)for(let m=0;m<60;m+=10)r.push(`${p2(h)}:${p2(m)}`);return r;}
 function tSel(name,val){return `<select class="tsel" name="${name}">${tOpts().map(t=>`<option value="${t}"${t===val?' selected':''}>${t}</option>`).join('')}</select>`;}
 
-// ── Render: Calendar week strip ──────────────────
-function renderCalendarStrip() {
-  const taskDates = loadAllTaskDates();
-  const cur = new Date(S.date + 'T00:00:00');
-  const todayStr = today();
-  // 選択日の週の月曜日を起点にする (JST的に月曜開始)
-  const dow = (cur.getDay() + 6) % 7;  // 月=0, 日=6
-  const monday = new Date(cur); monday.setDate(cur.getDate() - dow);
-
-  const days = Array.from({length: 7}, (_, i) => {
-    const d = new Date(monday); d.setDate(monday.getDate() + i);
-    const ds = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
-    return { ds, num: d.getDate(), dow: '月火水木金土日'[i], isToday: ds===todayStr, isSelected: ds===S.date, hasTasks: taskDates.has(ds) };
-  });
-
-  // 月選択用ラベル
-  const cm = new Date(S.date + 'T00:00:00');
-  const monthLabel = `${cm.getFullYear()}年${cm.getMonth()+1}月`;
-
-  return `<div class="cal-strip">
-    <div class="cal-month-row">
-      <button class="cal-month-btn" id="cal-month-btn">📅 ${monthLabel} ▾</button>
-      <div class="cal-nav-mini">
-        <button class="cal-nav-btn" id="cal-prev-week">‹</button>
-        <button class="cal-today-btn" id="cal-today">今日</button>
-        <button class="cal-nav-btn" id="cal-next-week">›</button>
-      </div>
-    </div>
-    <div class="cal-week">
-      ${days.map(d => `
-        <button class="cal-day${d.isSelected?' is-selected':''}${d.isToday?' is-today':''}" data-cal-day="${d.ds}">
-          <div class="cal-dow">${d.dow}</div>
-          <div class="cal-num">${d.num}</div>
-          <div class="cal-dot${d.hasTasks?' on':''}"></div>
-        </button>
-      `).join('')}
-    </div>
-  </div>`;
+// ── Render: Bottom tab bar ────────────────────────
+function renderTabBar() {
+  const todoCnt = S.todos.filter(t=>!t.done).length;
+  const todoBadge = todoCnt > 0 ? `<span class="tab-badge">${todoCnt}</span>` : '';
+  const tabs = [
+    { id: 'schedule', icon: '⏱', label: 'スケジュール', badge: '' },
+    { id: 'calendar', icon: '📅', label: 'カレンダー',   badge: '' },
+    { id: 'todo',     icon: '✓', label: 'やること',     badge: todoBadge },
+  ];
+  return `<nav class="tabbar">
+    ${tabs.map(t => `<button class="tabbar-btn${S.tab===t.id?' active':''}" data-tab="${t.id}">
+      <span class="tabbar-icon">${t.icon}</span>
+      <span class="tabbar-label">${t.label}${t.badge}</span>
+    </button>`).join('')}
+  </nav>`;
 }
 
-// ── Render: Stats card (達成率 + ご褒美) ─────────
-function renderStatsCard() {
+// ── Render: Compact stats footer (schedule tab 下部) ──
+function renderStatsFooter() {
   const st = stats();
   if (st.total === 0) return '';
   const pct = ~~(st.done / st.total * 100);
-  const res = Object.entries(st.byUnit).map(([u,v]) => u==='円' ? `${v.toLocaleString()}円` : `${v}${u}`).join('　');
   const reward = S.reward || { thresholdPct: 80, durationMin: 30 };
   const rewardOK = pct >= reward.thresholdPct;
-
-  return `<div class="stats-card">
-    <div class="progress-row">
-      <div class="progress-label">今日の達成率</div>
-      <div class="progress-pct">${pct}<span class="progress-pct-unit">%</span></div>
+  const rewardLine = rewardOK
+    ? `🎁 <b>${reward.durationMin}分のご褒美</b> 獲得！`
+    : `🎁 ${reward.durationMin}分まで あと ${reward.thresholdPct - pct}%`;
+  return `<div class="stats-footer">
+    <div class="sf-row">
+      <span class="sf-pct">${pct}%</span>
+      <span class="sf-text">${st.done}/${st.total} 完了</span>
+      <button class="sf-reward-edit" id="reward-edit" title="ご褒美設定">⚙︎</button>
     </div>
     <div class="stat-track"><div class="stat-fill" style="width:${pct}%"></div></div>
-    <div class="stat-text">${st.done}/${st.total} 完了${res?' · '+res:''}</div>
-    <div class="reward-row" id="reward-row">
-      <div class="reward-icon">🎁</div>
-      <div class="reward-text">
-        ${rewardOK
-          ? `<b>${reward.durationMin}分のご褒美時間 獲得！</b>`
-          : `達成率 ${reward.thresholdPct}% で <b>${reward.durationMin}分</b> のご褒美 (あと ${reward.thresholdPct - pct}%)`}
-      </div>
-      <button class="reward-edit" id="reward-edit">⚙︎</button>
-    </div>
+    <div class="sf-reward">${rewardLine}</div>
   </div>`;
 }
 
-// ── Render: Schedule (新レイアウト) ──────────────
-function renderSchedule() {
+// ── Tab 1: Schedule (メインタブ) ─────────────────
+function renderTabSchedule() {
   const isToday = S.date === today();
   const scheduleContent = S.tasks.length === 0
     ? `<div class="section-empty">
         <div class="section-empty-icon">⏱</div>
-        <div class="section-empty-text">この日の予定はまだありません</div>
+        <div class="section-empty-text">この日の予定はまだありません<br>下の「+ 追加」から登録</div>
        </div>`
     : `<div class="list">${S.tasks.map(renderCard).join('')}</div>`;
 
   const bottomBar = `<div class="bottom-bar">
     <button class="bar-btn primary" id="btn-add">＋ 追加</button>
-    ${S.templates.length>0?'<button class="bar-btn" id="btn-templates">固定予定</button>':''}
     ${S.tasks.length>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
    </div>`;
 
-  return `<div style="position:relative;min-height:100vh;">
-    <div class="header header-compact">
-      <div class="header-eyebrow">${isToday ? 'TODAY · 今日' : 'SCHEDULE'}</div>
-      <div class="header-date">${fDate(S.date)}</div>
+  return `<div class="header header-compact">
+    <div class="header-eyebrow">${isToday ? 'TODAY · 今日' : 'SCHEDULE'}</div>
+    <div class="header-date">${fDate(S.date)}</div>
+  </div>
+  ${scheduleContent}
+  ${renderStatsFooter()}
+  ${bottomBar}`;
+}
+
+// ── Tab 2: Calendar (月グリッド) ─────────────────
+function renderTabCalendar() {
+  const taskDates = loadAllTaskDates();
+  // 表示する月を決定 (S.calendarMonth or S.date 月)
+  const cur = S.calendarMonth
+    ? new Date(S.calendarMonth + '-01T00:00:00')
+    : new Date(S.date + 'T00:00:00');
+  const year = cur.getFullYear();
+  const month = cur.getMonth();   // 0-based
+  const monthLabel = `${year}年${month+1}月`;
+  const todayStr = today();
+
+  // 月初の曜日 (月=0, 日=6)
+  const first = new Date(year, month, 1);
+  const startDow = (first.getDay() + 6) % 7;
+  // 月末日
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  // 6週分のマス (42)
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const dayNum = i - startDow + 1;
+    if (dayNum < 1 || dayNum > lastDay) {
+      cells.push({ empty: true });
+    } else {
+      const d = new Date(year, month, dayNum);
+      const ds = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+      cells.push({
+        ds, num: dayNum,
+        dow: d.getDay(),
+        isToday: ds === todayStr,
+        isSelected: ds === S.date,
+        hasTasks: taskDates.has(ds),
+      });
+    }
+  }
+
+  return `<div class="header header-compact">
+    <div class="cal-page-head">
+      <button class="cal-nav-btn" id="cal-prev-month">‹</button>
+      <div class="cal-page-title">${monthLabel}</div>
+      <button class="cal-nav-btn" id="cal-next-month">›</button>
     </div>
-    ${renderCalendarStrip()}
-    ${renderStatsCard()}
-    <div class="section-title-row">
-      <h3 class="section-title">⏱ スケジュール</h3>
+    <button class="cal-today-btn" id="cal-today" style="position:absolute;top:calc(20px + env(safe-area-inset-top, 0px));right:20px;">今日</button>
+  </div>
+  <div class="cal-grid-wrap">
+    <div class="cal-grid-dow">
+      ${'月火水木金土日'.split('').map((d,i)=>`<div class="cal-grid-dow-cell${i>=5?' is-weekend':''}">${d}</div>`).join('')}
     </div>
-    ${scheduleContent}
-    <div class="section-title-row">
-      <h3 class="section-title">✓ やること <span class="section-sub">${S.todos.filter(t=>!t.done).length}件</span></h3>
+    <div class="cal-grid">
+      ${cells.map(c => {
+        if (c.empty) return `<div class="cal-cell empty"></div>`;
+        const cls = ['cal-cell'];
+        if (c.isSelected) cls.push('is-selected');
+        if (c.isToday) cls.push('is-today');
+        if (c.dow === 0) cls.push('is-sunday');
+        if (c.dow === 6) cls.push('is-saturday');
+        return `<button class="${cls.join(' ')}" data-cal-day="${c.ds}">
+          <div class="cal-cell-num">${c.num}</div>
+          ${c.hasTasks ? '<div class="cal-cell-dot"></div>' : ''}
+        </button>`;
+      }).join('')}
     </div>
-    ${renderTodoContent()}
-    ${bottomBar}
-    ${S.monthPickerOpen ? renderMonthPicker() : ''}
-    ${S.rewardSettingOpen ? renderRewardSetting() : ''}
   </div>`;
 }
 
-// ── Render: Todo (常時表示・スケジュール変換ボタン付き) ──
-function renderTodoContent() {
+// ── Tab 3: Todo (やることリスト単体) ─────────────
+function renderTabTodo() {
+  return `<div class="header header-compact">
+    <div class="header-eyebrow">TODO · やること</div>
+    <div class="header-date">${fDate(S.date)}</div>
+  </div>
+  ${renderTodoList()}`;
+}
+
+// ── やることリストのコンテンツ部分 ────────────────
+function renderTodoList() {
   const pending = S.todos.filter(t=>!t.done);
   const done    = S.todos.filter(t=>t.done);
 
@@ -409,7 +441,10 @@ function renderTodoContent() {
       <input type="text" class="todo-input" id="todo-input" placeholder="やることを追加…" maxlength="50">
       <button class="todo-add-btn" id="todo-add">追加</button>
     </div>
-    ${S.todos.length===0 ? `<div class="section-empty"><div class="section-empty-text">時間が決まってないやることをメモ</div></div>` : ''}
+    ${S.todos.length===0 ? `<div class="section-empty">
+        <div class="section-empty-icon">✓</div>
+        <div class="section-empty-text">時間が決まってない<br>「やること」をメモしておこう</div>
+      </div>` : ''}
     ${pending.length>0 ? `<div class="todo-group">${pending.map(mkItem).join('')}</div>` : ''}
     ${done.length>0 ? `<div class="todo-group todo-done-group">
       <div class="todo-group-label">完了 ${done.length}</div>
@@ -418,19 +453,19 @@ function renderTodoContent() {
   </div>`;
 }
 
-// ── Render: Month picker overlay ──────────────────
-function renderMonthPicker() {
-  const cur = new Date(S.date + 'T00:00:00');
-  const ym = `${cur.getFullYear()}-${p2(cur.getMonth()+1)}`;
-  return `<div class="overlay" id="month-overlay">
-    <div class="overlay-card">
-      <div class="overlay-head">月を選ぶ</div>
-      <input type="month" class="month-input" id="month-input" value="${ym}">
-      <div class="overlay-btns">
-        <button class="overlay-cancel" id="month-cancel">キャンセル</button>
-        <button class="overlay-ok" id="month-ok">移動</button>
-      </div>
-    </div>
+// ── Render: Schedule top-level (tabs統合) ────────
+function renderSchedule() {
+  let body = '';
+  switch (S.tab) {
+    case 'schedule': body = renderTabSchedule(); break;
+    case 'calendar': body = renderTabCalendar(); break;
+    case 'todo':     body = renderTabTodo();     break;
+    default:         body = renderTabSchedule();
+  }
+  return `<div style="position:relative;min-height:100vh;padding-bottom:140px;">
+    ${body}
+    ${renderTabBar()}
+    ${S.rewardSettingOpen ? renderRewardSetting() : ''}
   </div>`;
 }
 
@@ -786,32 +821,15 @@ function bind() {
   }
 
   if(S.view==='schedule'){
-    // ── カレンダー ───────────────────────────
-    all('[data-cal-day]',btn=>btn.addEventListener('click',e=>{
-      const ds=e.currentTarget.dataset.calDay;
-      setDate(ds);
-    }));
-    on('cal-prev-week',()=>{ const d=new Date(S.date+'T00:00:00');d.setDate(d.getDate()-7);setDate(d.toISOString().slice(0,10)); });
-    on('cal-next-week',()=>{ const d=new Date(S.date+'T00:00:00');d.setDate(d.getDate()+7);setDate(d.toISOString().slice(0,10)); });
-    on('cal-today',()=>setDate(today()));
-    on('cal-month-btn',()=>{ S.monthPickerOpen=true; render(); });
-    on('month-cancel',()=>{ S.monthPickerOpen=false; render(); });
-    on('month-ok',()=>{
-      const v=document.getElementById('month-input')?.value;
-      if (v) {
-        // YYYY-MM → 同月の今日と同じ日 or 1日
-        const cur=new Date(S.date+'T00:00:00');
-        const [y,m]=v.split('-').map(Number);
-        const targetDay=cur.getDate();
-        const lastDay=new Date(y, m, 0).getDate();
-        const day=Math.min(targetDay, lastDay);
-        setDate(`${y}-${p2(m)}-${p2(day)}`);
-      }
-      S.monthPickerOpen=false;
+    // ── タブバー切替 ─────────────────────────
+    all('[data-tab]',btn=>btn.addEventListener('click',e=>{
+      S.tab = e.currentTarget.dataset.tab;
+      // カレンダータブを開いたら表示月を S.date 月にリセット
+      if (S.tab === 'calendar') S.calendarMonth = null;
       render();
-    });
+    }));
 
-    // ── ご褒美設定 ───────────────────────────
+    // ── ご褒美設定 (overlay) ────────────────
     on('reward-edit',()=>{ S.rewardSettingOpen=true; render(); });
     on('reward-cancel',()=>{ S.rewardSettingOpen=false; render(); });
     on('reward-save',()=>{
@@ -823,63 +841,92 @@ function bind() {
       render();
     });
 
-    // ── スケジュール ─────────────────────────
-    const addFn=()=>{
-      const n=nowRound();
-      // 「+追加」は時間指定モードで開く（後から OFF にできる）
-      S.formData={startTime:n,endTime:addMin(n,60),_mode:'task'};
-      S.view='form';render();
-    };
-    on('btn-add',addFn);
-    on('btn-review',()=>{S.view='review';render();});
-    on('btn-templates',()=>{S.view='templates';render();});
-    all('.card-start-btn',btn=>btn.addEventListener('click',e=>{
-      const id=e.currentTarget.dataset.id;
-      if(S.activeId&&S.activeId!==id){
-        const p=S.tasks.find(t=>t.id===S.activeId);
-        if(p?.timerStartedAt){p.timerElapsedSec+=~~((Date.now()-p.timerStartedAt)/1000);p.timerStartedAt=null;}
-      }
-      const t=S.tasks.find(t=>t.id===id); if(!t)return;
-      S.activeId=id; t.status='active'; t.timerStartedAt=Date.now(); save();
-      S.view='timer'; render();
-    }));
-    all('[data-edit]',btn=>btn.addEventListener('click',e=>{
-      const t=S.tasks.find(t=>t.id===e.currentTarget.dataset.edit); if(!t)return;
-      S.formData={...t}; S.view='form'; render();
-    }));
-
-    // ── やること ─────────────────────────────
-    const addTodo=()=>{
-      const inp=document.getElementById('todo-input');
-      const text=inp?.value.trim(); if(!text)return;
-      S.todos.push({id:uid(),text,done:false});
-      saveTodo(); render();
-      setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
-    };
-    on('todo-add',addTodo);
-    document.getElementById('todo-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
-    all('[data-tcheck]',btn=>btn.addEventListener('click',e=>{
-      const id=e.currentTarget.dataset.tcheck;
-      const t=S.todos.find(t=>t.id===id); if(!t)return;
-      t.done=!t.done; saveTodo(); render();
-    }));
-    all('[data-tdel]',btn=>btn.addEventListener('click',e=>{
-      const id=e.currentTarget.dataset.tdel;
-      S.todos=S.todos.filter(t=>t.id!==id); saveTodo(); render();
-    }));
-    // ★ やること → スケジュール変換
-    all('[data-toschedule]',btn=>btn.addEventListener('click',e=>{
-      const id=e.currentTarget.dataset.toschedule;
-      const todo=S.todos.find(t=>t.id===id); if(!todo)return;
-      const n=nowRound();
-      S.formData={
-        title:todo.text,
-        startTime:n, endTime:addMin(n,60),
-        _mode:'task',
-        _fromTodoId:id,  // 保存後に削除するためのマーカー
+    // ── タブ別ハンドラ ────────────────────────
+    if (S.tab === 'schedule') {
+      const addFn=()=>{
+        const n=nowRound();
+        S.formData={startTime:n,endTime:addMin(n,60),_mode:'task'};
+        S.view='form';render();
       };
-      S.view='form'; render();
-    }));
+      on('btn-add',addFn);
+      on('btn-review',()=>{S.view='review';render();});
+      all('.card-start-btn',btn=>btn.addEventListener('click',e=>{
+        const id=e.currentTarget.dataset.id;
+        if(S.activeId&&S.activeId!==id){
+          const p=S.tasks.find(t=>t.id===S.activeId);
+          if(p?.timerStartedAt){p.timerElapsedSec+=~~((Date.now()-p.timerStartedAt)/1000);p.timerStartedAt=null;}
+        }
+        const t=S.tasks.find(t=>t.id===id); if(!t)return;
+        S.activeId=id; t.status='active'; t.timerStartedAt=Date.now(); save();
+        S.view='timer'; render();
+      }));
+      all('[data-edit]',btn=>btn.addEventListener('click',e=>{
+        const t=S.tasks.find(t=>t.id===e.currentTarget.dataset.edit); if(!t)return;
+        S.formData={...t}; S.view='form'; render();
+      }));
+    }
+
+    if (S.tab === 'calendar') {
+      // 月グリッドの日付タップ → スケジュールタブへ移動
+      all('[data-cal-day]',btn=>btn.addEventListener('click',e=>{
+        const ds=e.currentTarget.dataset.calDay;
+        S.tab = 'schedule';
+        setDate(ds);  // setDate は内部で render()
+      }));
+      // 月ナビ
+      on('cal-prev-month',()=>{
+        const cur = S.calendarMonth ? new Date(S.calendarMonth+'-01T00:00:00') : new Date(S.date+'T00:00:00');
+        cur.setMonth(cur.getMonth()-1);
+        S.calendarMonth = `${cur.getFullYear()}-${p2(cur.getMonth()+1)}`;
+        render();
+      });
+      on('cal-next-month',()=>{
+        const cur = S.calendarMonth ? new Date(S.calendarMonth+'-01T00:00:00') : new Date(S.date+'T00:00:00');
+        cur.setMonth(cur.getMonth()+1);
+        S.calendarMonth = `${cur.getFullYear()}-${p2(cur.getMonth()+1)}`;
+        render();
+      });
+      on('cal-today',()=>{
+        S.calendarMonth = null;
+        S.tab = 'schedule';
+        setDate(today());
+      });
+    }
+
+    if (S.tab === 'todo') {
+      const addTodo=()=>{
+        const inp=document.getElementById('todo-input');
+        const text=inp?.value.trim(); if(!text)return;
+        S.todos.push({id:uid(),text,done:false});
+        saveTodo(); render();
+        setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
+      };
+      on('todo-add',addTodo);
+      document.getElementById('todo-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
+      all('[data-tcheck]',btn=>btn.addEventListener('click',e=>{
+        const id=e.currentTarget.dataset.tcheck;
+        const t=S.todos.find(t=>t.id===id); if(!t)return;
+        t.done=!t.done; saveTodo(); render();
+      }));
+      all('[data-tdel]',btn=>btn.addEventListener('click',e=>{
+        const id=e.currentTarget.dataset.tdel;
+        S.todos=S.todos.filter(t=>t.id!==id); saveTodo(); render();
+      }));
+      // ★ やること → スケジュール変換 (スケジュールタブに移って form 開く)
+      all('[data-toschedule]',btn=>btn.addEventListener('click',e=>{
+        const id=e.currentTarget.dataset.toschedule;
+        const todo=S.todos.find(t=>t.id===id); if(!todo)return;
+        const n=nowRound();
+        S.formData={
+          title:todo.text,
+          startTime:n, endTime:addMin(n,60),
+          _mode:'task',
+          _fromTodoId:id,
+        };
+        S.tab = 'schedule';
+        S.view='form'; render();
+      }));
+    }
   }
 
   if(S.view==='timer'){
