@@ -4,25 +4,32 @@ const CIRC = 2 * Math.PI * 96; // r=96
 const STORE = 'dp_';
 const tKey = d => `${STORE}tasks_${d}`;
 const todKey = d => `${STORE}todo_${d}`;
-const TMPL_KEY = `${STORE}templates`;
+const TMPL_KEY  = `${STORE}templates`;
+const REWARD_KEY = `${STORE}reward`;
+// 全タスク保存日のキャッシュキー (カレンダーのドット表示用)
+const tasksKeyPrefix = `${STORE}tasks_`;
 
 const S = {
   date: today(),
   tasks: [],
   todos: [],
   templates: [],
+  reward: { thresholdPct: 80, durationMin: 30 },
   view: 'schedule',
-  tab: 'schedule',    // 'schedule' | 'todo'
   activeId: null,
   formData: null,
+  formMode: 'task',        // 'task' | 'todo'  (新規追加フォームの初期モード)
   shiftNext: true,
   raf: null,
   bgTimer: null,
   // ── アラーム関連 ─────────────────────────
-  alarmTimers: [],     // setTimeout ハンドル一覧
-  alarmModal: null,    // { taskId, kind: 'pre5' | 'start' } | null
+  alarmTimers: [],         // setTimeout ハンドル一覧
+  alarmModal: null,        // { taskId, kind: 'pre' | 'start' } | null
   alarmCheckInterval: null,
   audioCtx: null,
+  // ── カレンダー UI ────────────────────────
+  monthPickerOpen: false,
+  rewardSettingOpen: false,
 };
 
 // ── タスク重さ定義 ──────────────────────────────────
@@ -60,14 +67,36 @@ function saveTodo() { try{localStorage.setItem(todKey(S.date),JSON.stringify(S.t
 function loadTodo(d){ try{return JSON.parse(localStorage.getItem(todKey(d))||'[]');}catch(_){return[];} }
 function saveTmpl() { try{localStorage.setItem(TMPL_KEY,JSON.stringify(S.templates));}catch(_){} }
 function loadTmpl() { try{return JSON.parse(localStorage.getItem(TMPL_KEY)||'[]');}catch(_){return[];} }
+function saveReward() { try{localStorage.setItem(REWARD_KEY,JSON.stringify(S.reward));}catch(_){} }
+function loadReward() { try{const r=JSON.parse(localStorage.getItem(REWARD_KEY)||'null'); return r||{thresholdPct:80,durationMin:30};}catch(_){return{thresholdPct:80,durationMin:30};} }
+
+// カレンダードット表示用: タスクのある日付を Set で返す
+function loadAllTaskDates() {
+  const dates = new Set();
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(tasksKeyPrefix)) {
+        const arr = JSON.parse(localStorage.getItem(k) || '[]');
+        if (Array.isArray(arr) && arr.length > 0) {
+          dates.add(k.slice(tasksKeyPrefix.length));
+        }
+      }
+    }
+  } catch(_) {}
+  return dates;
+}
 
 // ── Tasks ─────────────────────────────────────────
 function mkTask(d) {
+  // alarmBefore: 開始◯分前にアラーム (0=なし、5/10/15/30 推奨)
+  const ab = (typeof d.alarmBefore === 'number') ? d.alarmBefore : 5;
   return { id:uid(), title:d.title||'', startTime:d.startTime||'09:00', endTime:d.endTime||'10:00',
            status:'pending', weight: WEIGHTS[d.weight] ? d.weight : 'normal',
+           alarmBefore: ab,
            resultLabel:d.resultLabel||'', resultUnit:d.resultUnit||'',
            resultValue:'', review:null, timerStartedAt:null, timerElapsedSec:0,
-           alarmedPre5:false, alarmedStart:false };
+           alarmedPre:false, alarmedStart:false };
 }
 function sortTasks() { S.tasks.sort((a,b)=>toMin(a.startTime)-toMin(b.startTime)); }
 function shiftAfter(id,mins) {
@@ -184,30 +213,32 @@ function scheduleAlarms() {
   S.tasks.forEach(t => {
     if (t.status !== 'pending') return;
     const startMin = toMin(t.startTime);
-    const pre5Min  = startMin - 5;
-    // 5分前アラーム
-    if (!t.alarmedPre5 && pre5Min > nowMin) {
-      const ms = (pre5Min - nowMin) * 60 * 1000;
-      const handle = setTimeout(() => firePre5(t.id), ms);
-      S.alarmTimers.push(handle);
+    const ab = typeof t.alarmBefore === 'number' ? t.alarmBefore : 5;
+    // ◯分前アラーム (alarmBefore=0 ならスキップ)
+    if (ab > 0 && !t.alarmedPre) {
+      const preMin = startMin - ab;
+      if (preMin > nowMin) {
+        const ms = (preMin - nowMin) * 60 * 1000;
+        S.alarmTimers.push(setTimeout(() => firePre(t.id), ms));
+      }
     }
     // 開始時刻アラーム
     if (!t.alarmedStart && startMin > nowMin) {
       const ms = (startMin - nowMin) * 60 * 1000;
-      const handle = setTimeout(() => fireStart(t.id), ms);
-      S.alarmTimers.push(handle);
+      S.alarmTimers.push(setTimeout(() => fireStart(t.id), ms));
     }
   });
 }
 
-function firePre5(id) {
+function firePre(id) {
   const t = S.tasks.find(x => x.id === id);
   if (!t || t.status !== 'pending') return;
-  t.alarmedPre5 = true; save();
+  t.alarmedPre = true; save();
   playBeep(2);
   vibrateBuzz();
-  notify('⏰ 5分前です', `「${t.title}」がもうすぐ始まります (${t.startTime})`);
-  S.alarmModal = { taskId: id, kind: 'pre5' };
+  const ab = t.alarmBefore || 5;
+  notify(`⏰ ${ab}分前です`, `「${t.title}」がもうすぐ始まります (${t.startTime})`);
+  S.alarmModal = { taskId: id, kind: 'pre' };
   render();
 }
 function fireStart(id) {
@@ -233,8 +264,9 @@ function startAlarmCheck() {
     S.tasks.forEach(t => {
       if (t.status !== 'pending') return;
       const startMin = toMin(t.startTime);
-      // 5分前 (4〜5分の範囲で発火)
-      if (!t.alarmedPre5 && nowMin >= startMin - 5 && nowMin < startMin - 4) firePre5(t.id);
+      const ab = typeof t.alarmBefore === 'number' ? t.alarmBefore : 5;
+      // ◯分前 (-1分の幅で発火)
+      if (ab > 0 && !t.alarmedPre && nowMin >= startMin - ab && nowMin < startMin - ab + 1) firePre(t.id);
       // 開始時刻 (0〜1分の範囲で発火)
       if (!t.alarmedStart && nowMin >= startMin && nowMin < startMin + 1) fireStart(t.id);
     });
@@ -253,68 +285,112 @@ function stats() {
 function tOpts(){const r=[];for(let h=0;h<24;h++)for(let m=0;m<60;m+=10)r.push(`${p2(h)}:${p2(m)}`);return r;}
 function tSel(name,val){return `<select class="tsel" name="${name}">${tOpts().map(t=>`<option value="${t}"${t===val?' selected':''}>${t}</option>`).join('')}</select>`;}
 
-// ── Tab bar ──────────────────────────────────────
-function renderTabBar() {
-  const todoDone = S.todos.filter(t=>t.done).length;
-  const todoTotal = S.todos.length;
-  const todoSub = todoTotal > 0 ? ` ${todoDone}/${todoTotal}` : '';
-  return `<div class="tab-bar">
-    <button class="tab-btn ${S.tab==='schedule'?'active':''}" id="tab-schedule">スケジュール</button>
-    <button class="tab-btn ${S.tab==='todo'?'active':''}" id="tab-todo">やること${todoSub}</button>
+// ── Render: Calendar week strip ──────────────────
+function renderCalendarStrip() {
+  const taskDates = loadAllTaskDates();
+  const cur = new Date(S.date + 'T00:00:00');
+  const todayStr = today();
+  // 選択日の週の月曜日を起点にする (JST的に月曜開始)
+  const dow = (cur.getDay() + 6) % 7;  // 月=0, 日=6
+  const monday = new Date(cur); monday.setDate(cur.getDate() - dow);
+
+  const days = Array.from({length: 7}, (_, i) => {
+    const d = new Date(monday); d.setDate(monday.getDate() + i);
+    const ds = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
+    return { ds, num: d.getDate(), dow: '月火水木金土日'[i], isToday: ds===todayStr, isSelected: ds===S.date, hasTasks: taskDates.has(ds) };
+  });
+
+  // 月選択用ラベル
+  const cm = new Date(S.date + 'T00:00:00');
+  const monthLabel = `${cm.getFullYear()}年${cm.getMonth()+1}月`;
+
+  return `<div class="cal-strip">
+    <div class="cal-month-row">
+      <button class="cal-month-btn" id="cal-month-btn">📅 ${monthLabel} ▾</button>
+      <div class="cal-nav-mini">
+        <button class="cal-nav-btn" id="cal-prev-week">‹</button>
+        <button class="cal-today-btn" id="cal-today">今日</button>
+        <button class="cal-nav-btn" id="cal-next-week">›</button>
+      </div>
+    </div>
+    <div class="cal-week">
+      ${days.map(d => `
+        <button class="cal-day${d.isSelected?' is-selected':''}${d.isToday?' is-today':''}" data-cal-day="${d.ds}">
+          <div class="cal-dow">${d.dow}</div>
+          <div class="cal-num">${d.num}</div>
+          <div class="cal-dot${d.hasTasks?' on':''}"></div>
+        </button>
+      `).join('')}
+    </div>
   </div>`;
 }
 
-// ── Render: Schedule ─────────────────────────────
-function renderSchedule() {
-  const st=stats(), isToday=S.date===today();
-  const pct=st.total>0?~~(st.done/st.total*100):0;
-  const res=Object.entries(st.byUnit).map(([u,v])=>u==='円'?`${v.toLocaleString()}円`:`${v}${u}`).join('　');
+// ── Render: Stats card (達成率 + ご褒美) ─────────
+function renderStatsCard() {
+  const st = stats();
+  if (st.total === 0) return '';
+  const pct = ~~(st.done / st.total * 100);
+  const res = Object.entries(st.byUnit).map(([u,v]) => u==='円' ? `${v.toLocaleString()}円` : `${v}${u}`).join('　');
+  const reward = S.reward || { thresholdPct: 80, durationMin: 30 };
+  const rewardOK = pct >= reward.thresholdPct;
 
-  const headerStats = st.total>0 ? `
-    <div class="header-stats">
-      <div class="progress-row">
-        <div class="progress-label">今日の達成率</div>
-        <div class="progress-pct">${pct}<span class="progress-pct-unit">%</span></div>
+  return `<div class="stats-card">
+    <div class="progress-row">
+      <div class="progress-label">今日の達成率</div>
+      <div class="progress-pct">${pct}<span class="progress-pct-unit">%</span></div>
+    </div>
+    <div class="stat-track"><div class="stat-fill" style="width:${pct}%"></div></div>
+    <div class="stat-text">${st.done}/${st.total} 完了${res?' · '+res:''}</div>
+    <div class="reward-row" id="reward-row">
+      <div class="reward-icon">🎁</div>
+      <div class="reward-text">
+        ${rewardOK
+          ? `<b>${reward.durationMin}分のご褒美時間 獲得！</b>`
+          : `達成率 ${reward.thresholdPct}% で <b>${reward.durationMin}分</b> のご褒美 (あと ${reward.thresholdPct - pct}%)`}
       </div>
-      <div class="stat-track"><div class="stat-fill" style="width:${pct}%"></div></div>
-      <div class="stat-text">${st.done}/${st.total} 完了${res?' · '+res:''}</div>
-    </div>` : '';
+      <button class="reward-edit" id="reward-edit">⚙︎</button>
+    </div>
+  </div>`;
+}
 
-  const scheduleContent = S.tasks.length===0
-    ? `<div class="empty-screen">
-        <div class="empty-icon">⚡</div>
-        <div class="empty-title">準備完了</div>
-        <div class="empty-sub">今日のスケジュールを組んで<br>最高の一日にしよう</div>
-        <button class="empty-btn" id="btn-add-empty">＋ タスクを追加</button>
+// ── Render: Schedule (新レイアウト) ──────────────
+function renderSchedule() {
+  const isToday = S.date === today();
+  const scheduleContent = S.tasks.length === 0
+    ? `<div class="section-empty">
+        <div class="section-empty-icon">⏱</div>
+        <div class="section-empty-text">この日の予定はまだありません</div>
        </div>`
     : `<div class="list">${S.tasks.map(renderCard).join('')}</div>`;
 
-  const bottomBar = S.tab === 'schedule'
-    ? `<div class="bottom-bar">
-        <button class="bar-btn primary" id="btn-add">＋ タスク追加</button>
-        ${S.templates.length>0?'<button class="bar-btn" id="btn-templates">固定予定</button>':''}
-        ${st.total>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
-       </div>`
-    : `<div class="bottom-bar">
-        <button class="bar-btn primary" id="btn-todo-add-bar">＋ 追加</button>
-       </div>`;
+  const bottomBar = `<div class="bottom-bar">
+    <button class="bar-btn primary" id="btn-add">＋ 追加</button>
+    ${S.templates.length>0?'<button class="bar-btn" id="btn-templates">固定予定</button>':''}
+    ${S.tasks.length>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
+   </div>`;
 
   return `<div style="position:relative;min-height:100vh;">
-    <div class="header" style="position:relative;">
-      <div class="header-nav">
-        <button class="nav-btn" id="prev-day">‹</button>
-        <button class="nav-btn" id="next-day">›</button>
-      </div>
-      <div class="header-eyebrow">${isToday?'TODAY · 今日':'SCHEDULE'}</div>
+    <div class="header header-compact">
+      <div class="header-eyebrow">${isToday ? 'TODAY · 今日' : 'SCHEDULE'}</div>
       <div class="header-date">${fDate(S.date)}</div>
     </div>
-    ${renderTabBar()}
-    ${S.tab==='schedule' ? headerStats + scheduleContent : renderTodoContent()}
+    ${renderCalendarStrip()}
+    ${renderStatsCard()}
+    <div class="section-title-row">
+      <h3 class="section-title">⏱ スケジュール</h3>
+    </div>
+    ${scheduleContent}
+    <div class="section-title-row">
+      <h3 class="section-title">✓ やること <span class="section-sub">${S.todos.filter(t=>!t.done).length}件</span></h3>
+    </div>
+    ${renderTodoContent()}
     ${bottomBar}
+    ${S.monthPickerOpen ? renderMonthPicker() : ''}
+    ${S.rewardSettingOpen ? renderRewardSetting() : ''}
   </div>`;
 }
 
-// ── Render: Todo list ────────────────────────────
+// ── Render: Todo (常時表示・スケジュール変換ボタン付き) ──
 function renderTodoContent() {
   const pending = S.todos.filter(t=>!t.done);
   const done    = S.todos.filter(t=>t.done);
@@ -324,25 +400,63 @@ function renderTodoContent() {
       ${t.done?'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':''}
     </button>
     <span class="todo-text">${esc(t.text)}</span>
+    ${!t.done?`<button class="todo-toschedule" data-toschedule="${t.id}" title="時間を決めてスケジュール化">🕐</button>`:''}
     <button class="todo-del" data-tdel="${t.id}">×</button>
-  </div>`;
-
-  const emptyHtml = `<div class="todo-empty">
-    <div class="todo-empty-icon">✓</div>
-    <div class="todo-empty-text">今日絶対やることを<br>メモしておこう</div>
   </div>`;
 
   return `<div class="todo-screen">
     <div class="todo-input-row">
-      <input type="text" class="todo-input" id="todo-input" placeholder="追加する…" maxlength="50">
+      <input type="text" class="todo-input" id="todo-input" placeholder="やることを追加…" maxlength="50">
       <button class="todo-add-btn" id="todo-add">追加</button>
     </div>
-    ${S.todos.length===0 ? emptyHtml : ''}
+    ${S.todos.length===0 ? `<div class="section-empty"><div class="section-empty-text">時間が決まってないやることをメモ</div></div>` : ''}
     ${pending.length>0 ? `<div class="todo-group">${pending.map(mkItem).join('')}</div>` : ''}
     ${done.length>0 ? `<div class="todo-group todo-done-group">
       <div class="todo-group-label">完了 ${done.length}</div>
       ${done.map(mkItem).join('')}
     </div>` : ''}
+  </div>`;
+}
+
+// ── Render: Month picker overlay ──────────────────
+function renderMonthPicker() {
+  const cur = new Date(S.date + 'T00:00:00');
+  const ym = `${cur.getFullYear()}-${p2(cur.getMonth()+1)}`;
+  return `<div class="overlay" id="month-overlay">
+    <div class="overlay-card">
+      <div class="overlay-head">月を選ぶ</div>
+      <input type="month" class="month-input" id="month-input" value="${ym}">
+      <div class="overlay-btns">
+        <button class="overlay-cancel" id="month-cancel">キャンセル</button>
+        <button class="overlay-ok" id="month-ok">移動</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Render: Reward setting overlay ────────────────
+function renderRewardSetting() {
+  const r = S.reward;
+  return `<div class="overlay" id="reward-overlay">
+    <div class="overlay-card">
+      <div class="overlay-head">🎁 ご褒美時間の設定</div>
+      <div class="overlay-row">
+        <label>達成率</label>
+        <select class="overlay-select" id="reward-pct">
+          ${[50,60,70,80,90,100].map(n=>`<option value="${n}"${n===r.thresholdPct?' selected':''}>${n}%</option>`).join('')}
+        </select>
+      </div>
+      <div class="overlay-row">
+        <label>ご褒美時間</label>
+        <select class="overlay-select" id="reward-dur">
+          ${[10,15,20,30,45,60,90,120].map(n=>`<option value="${n}"${n===r.durationMin?' selected':''}>${n}分</option>`).join('')}
+        </select>
+      </div>
+      <div class="overlay-btns">
+        <button class="overlay-cancel" id="reward-cancel">キャンセル</button>
+        <button class="overlay-ok" id="reward-save">保存</button>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -535,6 +649,8 @@ function renderTemplates() {
 // ── Render: Form ──────────────────────────────────
 function renderForm() {
   const d=S.formData||{}, isEdit=!!d.id;
+  // 「時間を指定する」: task mode = ON, todo mode = OFF
+  const hasTime = d._mode === 'todo' ? false : (d.startTime !== undefined || d._mode === 'task' || isEdit);
   const presets=[{label:'出品数',unit:'件'},{label:'仕入れ数',unit:'件'},{label:'売上',unit:'円'},{label:'利益',unit:'円'}];
   const mp=presets.find(p=>p.label===d.resultLabel&&p.unit===d.resultUnit);
   const isCustom=d.resultLabel&&!mp, isNone=!d.resultLabel;
@@ -546,50 +662,70 @@ function renderForm() {
 
   // Check if this task is already a template
   const isTemplate = d.id && S.templates.some(t=>t.sourceId===d.id);
+  // アラーム選択肢 (デフォルト 5分前)
+  const alarmCur = typeof d.alarmBefore === 'number' ? d.alarmBefore : 5;
+  const alarmOpts = [0, 5, 10, 15, 30];
+  const alarmChips = alarmOpts.map(n => `<button class="chip alarm-chip${alarmCur===n?' on':''}" data-alarm="${n}">${n===0?'なし':`${n}分前`}</button>`).join('');
 
   return `<div class="form-screen">
     <div class="screen-head">
       <button class="back-btn" id="form-back">← キャンセル</button>
-      <h2>${isEdit?'編集':'タスク追加'}</h2>
+      <h2>${isEdit?'編集':'追加'}</h2>
       ${isEdit?`<button class="del-btn" id="form-del">削除</button>`:'<div></div>'}
     </div>
     <div class="form-body">
       <div class="field-section">
         <div class="field-section-title">タスク名</div>
-        <input class="finput" id="f-title" type="text" value="${esc(d.title||'')}" placeholder="仕入れ、出品、休憩…" maxlength="30">
-        <div class="time-row">
-          <div class="time-side">
-            <label>開始</label>
-            ${tSel('startTime',d.startTime||'09:00')}
+        <input class="finput" id="f-title" type="text" value="${esc(d.title||d.text||'')}" placeholder="仕入れ、出品、休憩…" maxlength="30">
+        ${!isEdit ? `
+        <label class="tmpl-toggle" style="margin-top:12px;">
+          <div class="tmpl-toggle-text">
+            <span class="tmpl-toggle-label">時間を指定する</span>
+            <span class="tmpl-toggle-sub">OFF にすると「やること」に追加されます</span>
           </div>
-          <div class="time-divider">—</div>
-          <div class="time-side">
-            <label>終了</label>
-            ${tSel('endTime',d.endTime||'10:00')}
+          <div class="toggle-switch ${hasTime?'on':''}" id="time-toggle-sw" role="switch" aria-checked="${hasTime}"></div>
+        </label>` : ''}
+        <div id="time-fields" class="${hasTime?'':'hidden'}">
+          <div class="time-row" style="margin-top:12px;">
+            <div class="time-side">
+              <label>開始</label>
+              ${tSel('startTime',d.startTime||'09:00')}
+            </div>
+            <div class="time-divider">—</div>
+            <div class="time-side">
+              <label>終了</label>
+              ${tSel('endTime',d.endTime||'10:00')}
+            </div>
           </div>
         </div>
       </div>
-      <div class="chips-section">
-        <div class="chips-title">タスクの重さ</div>
-        <div class="chips weight-chips">
-          ${W_KEYS.map(k => `<button class="chip weight-chip${(d.weight||'normal')===k?' on':''}" data-weight="${k}" style="--w-color:${WEIGHTS[k].color};--w-bg:${WEIGHTS[k].bg};--w-border:${WEIGHTS[k].border};">${WEIGHTS[k].label}</button>`).join('')}
+      <div id="task-only-fields" class="${hasTime?'':'hidden'}">
+        <div class="chips-section">
+          <div class="chips-title">タスクの重さ</div>
+          <div class="chips weight-chips">
+            ${W_KEYS.map(k => `<button class="chip weight-chip${(d.weight||'normal')===k?' on':''}" data-weight="${k}" style="--w-color:${WEIGHTS[k].color};--w-bg:${WEIGHTS[k].bg};--w-border:${WEIGHTS[k].border};">${WEIGHTS[k].label}</button>`).join('')}
+          </div>
         </div>
+        <div class="chips-section">
+          <div class="chips-title">アラーム (開始時刻に加えて)</div>
+          <div class="chips">${alarmChips}</div>
+        </div>
+        <div class="chips-section">
+          <div class="chips-title">成果の記録</div>
+          <div class="chips">${chips}</div>
+          <div class="custom-fields${isCustom?' show':''}" id="custom-fields">
+            <input class="finput-sm" id="f-rl" type="text" value="${esc(isCustom?d.resultLabel:'')}" placeholder="ラベル（例：仕入れ数）">
+            <input class="finput-sm" id="f-ru" type="text" value="${esc(isCustom?d.resultUnit:'')}" placeholder="単位" style="width:90px;flex-shrink:0">
+          </div>
+        </div>
+        <label class="tmpl-toggle">
+          <div class="tmpl-toggle-text">
+            <span class="tmpl-toggle-label">固定予定に保存</span>
+            <span class="tmpl-toggle-sub">毎回使う予定をテンプレートとして保存</span>
+          </div>
+          <div class="toggle-switch ${isTemplate?'on':''}" id="tmpl-toggle-sw" role="switch" aria-checked="${isTemplate}"></div>
+        </label>
       </div>
-      <div class="chips-section">
-        <div class="chips-title">成果の記録</div>
-        <div class="chips">${chips}</div>
-        <div class="custom-fields${isCustom?' show':''}" id="custom-fields">
-          <input class="finput-sm" id="f-rl" type="text" value="${esc(isCustom?d.resultLabel:'')}" placeholder="ラベル（例：仕入れ数）">
-          <input class="finput-sm" id="f-ru" type="text" value="${esc(isCustom?d.resultUnit:'')}" placeholder="単位" style="width:90px;flex-shrink:0">
-        </div>
-      </div>
-      <label class="tmpl-toggle">
-        <div class="tmpl-toggle-text">
-          <span class="tmpl-toggle-label">固定予定に保存</span>
-          <span class="tmpl-toggle-sub">毎回使う予定をテンプレートとして保存</span>
-        </div>
-        <div class="toggle-switch ${isTemplate?'on':''}" id="tmpl-toggle-sw" role="switch" aria-checked="${isTemplate}"></div>
-      </label>
       <button class="form-save-btn" id="form-save">${isEdit?'保存する':'追加する'}</button>
     </div>
   </div>`;
@@ -650,53 +786,100 @@ function bind() {
   }
 
   if(S.view==='schedule'){
-    // Tab switching
-    on('tab-schedule',()=>{S.tab='schedule';render();});
-    on('tab-todo',()=>{S.tab='todo';render();});
+    // ── カレンダー ───────────────────────────
+    all('[data-cal-day]',btn=>btn.addEventListener('click',e=>{
+      const ds=e.currentTarget.dataset.calDay;
+      setDate(ds);
+    }));
+    on('cal-prev-week',()=>{ const d=new Date(S.date+'T00:00:00');d.setDate(d.getDate()-7);setDate(d.toISOString().slice(0,10)); });
+    on('cal-next-week',()=>{ const d=new Date(S.date+'T00:00:00');d.setDate(d.getDate()+7);setDate(d.toISOString().slice(0,10)); });
+    on('cal-today',()=>setDate(today()));
+    on('cal-month-btn',()=>{ S.monthPickerOpen=true; render(); });
+    on('month-cancel',()=>{ S.monthPickerOpen=false; render(); });
+    on('month-ok',()=>{
+      const v=document.getElementById('month-input')?.value;
+      if (v) {
+        // YYYY-MM → 同月の今日と同じ日 or 1日
+        const cur=new Date(S.date+'T00:00:00');
+        const [y,m]=v.split('-').map(Number);
+        const targetDay=cur.getDate();
+        const lastDay=new Date(y, m, 0).getDate();
+        const day=Math.min(targetDay, lastDay);
+        setDate(`${y}-${p2(m)}-${p2(day)}`);
+      }
+      S.monthPickerOpen=false;
+      render();
+    });
 
-    if(S.tab==='schedule'){
-      const addFn=()=>{const n=nowRound();S.formData={startTime:n,endTime:addMin(n,60)};S.view='form';render();};
-      on('btn-add',addFn); on('btn-add-empty',addFn);
-      on('btn-review',()=>{S.view='review';render();});
-      on('btn-templates',()=>{S.view='templates';render();});
-      all('.card-start-btn',btn=>btn.addEventListener('click',e=>{
-        const id=e.currentTarget.dataset.id;
-        if(S.activeId&&S.activeId!==id){
-          const p=S.tasks.find(t=>t.id===S.activeId);
-          if(p?.timerStartedAt){p.timerElapsedSec+=~~((Date.now()-p.timerStartedAt)/1000);p.timerStartedAt=null;}
-        }
-        const t=S.tasks.find(t=>t.id===id); if(!t)return;
-        S.activeId=id; t.status='active'; t.timerStartedAt=Date.now(); save();
-        S.view='timer'; render();
-      }));
-      all('[data-edit]',btn=>btn.addEventListener('click',e=>{
-        const t=S.tasks.find(t=>t.id===e.currentTarget.dataset.edit); if(!t)return;
-        S.formData={...t}; S.view='form'; render();
-      }));
-    }
+    // ── ご褒美設定 ───────────────────────────
+    on('reward-edit',()=>{ S.rewardSettingOpen=true; render(); });
+    on('reward-cancel',()=>{ S.rewardSettingOpen=false; render(); });
+    on('reward-save',()=>{
+      const pct=Number(document.getElementById('reward-pct')?.value)||80;
+      const dur=Number(document.getElementById('reward-dur')?.value)||30;
+      S.reward={thresholdPct:pct, durationMin:dur};
+      saveReward();
+      S.rewardSettingOpen=false;
+      render();
+    });
 
-    if(S.tab==='todo'){
-      const addTodo=()=>{
-        const inp=document.getElementById('todo-input');
-        const text=inp?.value.trim(); if(!text)return;
-        S.todos.push({id:uid(),text,done:false});
-        saveTodo(); render();
-        // re-focus input after render
-        setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
+    // ── スケジュール ─────────────────────────
+    const addFn=()=>{
+      const n=nowRound();
+      // 「+追加」は時間指定モードで開く（後から OFF にできる）
+      S.formData={startTime:n,endTime:addMin(n,60),_mode:'task'};
+      S.view='form';render();
+    };
+    on('btn-add',addFn);
+    on('btn-review',()=>{S.view='review';render();});
+    on('btn-templates',()=>{S.view='templates';render();});
+    all('.card-start-btn',btn=>btn.addEventListener('click',e=>{
+      const id=e.currentTarget.dataset.id;
+      if(S.activeId&&S.activeId!==id){
+        const p=S.tasks.find(t=>t.id===S.activeId);
+        if(p?.timerStartedAt){p.timerElapsedSec+=~~((Date.now()-p.timerStartedAt)/1000);p.timerStartedAt=null;}
+      }
+      const t=S.tasks.find(t=>t.id===id); if(!t)return;
+      S.activeId=id; t.status='active'; t.timerStartedAt=Date.now(); save();
+      S.view='timer'; render();
+    }));
+    all('[data-edit]',btn=>btn.addEventListener('click',e=>{
+      const t=S.tasks.find(t=>t.id===e.currentTarget.dataset.edit); if(!t)return;
+      S.formData={...t}; S.view='form'; render();
+    }));
+
+    // ── やること ─────────────────────────────
+    const addTodo=()=>{
+      const inp=document.getElementById('todo-input');
+      const text=inp?.value.trim(); if(!text)return;
+      S.todos.push({id:uid(),text,done:false});
+      saveTodo(); render();
+      setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
+    };
+    on('todo-add',addTodo);
+    document.getElementById('todo-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
+    all('[data-tcheck]',btn=>btn.addEventListener('click',e=>{
+      const id=e.currentTarget.dataset.tcheck;
+      const t=S.todos.find(t=>t.id===id); if(!t)return;
+      t.done=!t.done; saveTodo(); render();
+    }));
+    all('[data-tdel]',btn=>btn.addEventListener('click',e=>{
+      const id=e.currentTarget.dataset.tdel;
+      S.todos=S.todos.filter(t=>t.id!==id); saveTodo(); render();
+    }));
+    // ★ やること → スケジュール変換
+    all('[data-toschedule]',btn=>btn.addEventListener('click',e=>{
+      const id=e.currentTarget.dataset.toschedule;
+      const todo=S.todos.find(t=>t.id===id); if(!todo)return;
+      const n=nowRound();
+      S.formData={
+        title:todo.text,
+        startTime:n, endTime:addMin(n,60),
+        _mode:'task',
+        _fromTodoId:id,  // 保存後に削除するためのマーカー
       };
-      on('todo-add',addTodo);
-      on('btn-todo-add-bar',()=>{ document.getElementById('todo-input')?.focus(); });
-      document.getElementById('todo-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
-      all('[data-tcheck]',btn=>btn.addEventListener('click',e=>{
-        const id=e.currentTarget.dataset.tcheck;
-        const t=S.todos.find(t=>t.id===id); if(!t)return;
-        t.done=!t.done; saveTodo(); render();
-      }));
-      all('[data-tdel]',btn=>btn.addEventListener('click',e=>{
-        const id=e.currentTarget.dataset.tdel;
-        S.todos=S.todos.filter(t=>t.id!==id); saveTodo(); render();
-      }));
-    }
+      S.view='form'; render();
+    }));
   }
 
   if(S.view==='timer'){
@@ -763,7 +946,17 @@ function bind() {
   }
 
   if(S.view==='form'){
-    // Toggle switch for template
+    // Toggle: 時間を指定する
+    on('time-toggle-sw',()=>{
+      const sw=document.getElementById('time-toggle-sw');
+      const isOn=sw.classList.contains('on');
+      sw.classList.toggle('on',!isOn);
+      sw.setAttribute('aria-checked',String(!isOn));
+      // 表示切替
+      document.getElementById('time-fields')?.classList.toggle('hidden', isOn);
+      document.getElementById('task-only-fields')?.classList.toggle('hidden', isOn);
+    });
+    // Toggle: 固定予定に保存
     on('tmpl-toggle-sw',()=>{
       const sw=document.getElementById('tmpl-toggle-sw');
       const isOn=sw.classList.contains('on');
@@ -776,14 +969,15 @@ function bind() {
       if(!confirm('削除しますか？'))return;
       S.tasks=S.tasks.filter(t=>t.id!==S.formData.id);
       if(S.activeId===S.formData.id){S.activeId=null;stopRAF();stopBg();}
-      // Also remove template if exists
       S.templates=S.templates.filter(t=>t.sourceId!==S.formData.id);
-      saveTmpl(); save(); S.formData=null; S.view='schedule'; render();
+      saveTmpl(); save(); scheduleAlarms();
+      S.formData=null; S.view='schedule'; render();
     });
     on('form-save',saveForm);
-    // 成果記録の chip（.weight-chip 以外）
-    all('.chip:not(.weight-chip)',c=>c.addEventListener('click',e=>{
-      all('.chip:not(.weight-chip)',x=>x.classList.remove('on')); e.currentTarget.classList.add('on');
+
+    // 成果記録の chip
+    all('.chip:not(.weight-chip):not(.alarm-chip)',c=>c.addEventListener('click',e=>{
+      all('.chip:not(.weight-chip):not(.alarm-chip)',x=>x.classList.remove('on')); e.currentTarget.classList.add('on');
       const cf=document.getElementById('custom-fields');
       const k=e.currentTarget.dataset.chip,l=e.currentTarget.dataset.chipL,u=e.currentTarget.dataset.chipU;
       if(k==='none'){cf.classList.remove('show');document.getElementById('f-rl').value='';document.getElementById('f-ru').value='';}
@@ -795,12 +989,33 @@ function bind() {
       all('.weight-chip',x=>x.classList.remove('on'));
       e.currentTarget.classList.add('on');
     }));
+    // アラームの chip
+    all('.alarm-chip',c=>c.addEventListener('click',e=>{
+      all('.alarm-chip',x=>x.classList.remove('on'));
+      e.currentTarget.classList.add('on');
+    }));
   }
 }
 
 function saveForm() {
   const title=document.getElementById('f-title')?.value.trim();
   if(!title){alert('タスク名を入力してください');return;}
+
+  const isEdit = !!S.formData?.id;
+  // 編集の場合は常に時間あり、新規の場合は toggle で判定
+  const timeToggle = document.getElementById('time-toggle-sw');
+  const hasTime = isEdit || (timeToggle ? timeToggle.classList.contains('on') : true);
+
+  // ── やること (時間なし) として保存 ──
+  if (!hasTime) {
+    S.todos.push({id:uid(), text:title, done:false});
+    saveTodo();
+    // todo→schedule 変換中ではなく純粋な「時間OFFで追加」なので fromTodoId は無視
+    S.formData=null; S.view='schedule'; render();
+    return;
+  }
+
+  // ── スケジュール (時間あり) として保存 ──
   const s=document.querySelector('[name="startTime"]')?.value;
   const e=document.querySelector('[name="endTime"]')?.value;
   if(toMin(s)>=toMin(e)){alert('終了時間は開始時間より後にしてください');return;}
@@ -808,39 +1023,53 @@ function saveForm() {
   const ru=document.getElementById('f-ru')?.value.trim()||'';
   const weightEl=document.querySelector('.weight-chip.on');
   const weight=weightEl?.dataset.weight || 'normal';
+  const alarmEl=document.querySelector('.alarm-chip.on');
+  const alarmBefore=alarmEl ? Number(alarmEl.dataset.alarm) : 5;
   const saveAsTemplate=document.getElementById('tmpl-toggle-sw')?.classList.contains('on');
 
   let taskId;
   if(S.formData?.id){
     const i=S.tasks.findIndex(t=>t.id===S.formData.id);
-    if(i>=0){S.tasks[i]={...S.tasks[i],title,startTime:s,endTime:e,weight,resultLabel:rl,resultUnit:ru,
+    if(i>=0){S.tasks[i]={...S.tasks[i],title,startTime:s,endTime:e,weight,alarmBefore,resultLabel:rl,resultUnit:ru,
             // 開始時刻が変わったらアラームフラグをリセット
-            alarmedPre5: S.tasks[i].startTime===s ? S.tasks[i].alarmedPre5 : false,
+            alarmedPre: S.tasks[i].startTime===s ? S.tasks[i].alarmedPre : false,
             alarmedStart: S.tasks[i].startTime===s ? S.tasks[i].alarmedStart : false};}
     taskId=S.formData.id;
   } else {
-    const task=mkTask({title,startTime:s,endTime:e,weight,resultLabel:rl,resultUnit:ru});
+    const task=mkTask({title,startTime:s,endTime:e,weight,alarmBefore,resultLabel:rl,resultUnit:ru});
     S.tasks.push(task);
     taskId=task.id;
   }
 
-  // Handle template save/remove
+  // Template save/remove
   if(saveAsTemplate){
-    // Remove existing template for this task if any, then add new
     S.templates=S.templates.filter(t=>t.sourceId!==taskId);
     S.templates.push({id:uid(),sourceId:taskId,title,startTime:s,endTime:e,weight,resultLabel:rl,resultUnit:ru});
     saveTmpl();
-  } else {
-    // If template existed but toggle is off, remove it
-    if(S.formData?.id){
-      const had=S.templates.some(t=>t.sourceId===taskId);
-      if(had){ S.templates=S.templates.filter(t=>t.sourceId!==taskId); saveTmpl(); }
-    }
+  } else if(S.formData?.id){
+    const had=S.templates.some(t=>t.sourceId===taskId);
+    if(had){ S.templates=S.templates.filter(t=>t.sourceId!==taskId); saveTmpl(); }
+  }
+
+  // ★ todo → schedule 変換 (元 todo を削除)
+  if (S.formData?._fromTodoId) {
+    S.todos = S.todos.filter(t => t.id !== S.formData._fromTodoId);
+    saveTodo();
   }
 
   sortTasks(); save();
-  scheduleAlarms();   // ★ アラームを再スケジュール
+  scheduleAlarms();
   S.formData=null; S.view='schedule'; render();
+}
+
+// 指定日付に移動
+function setDate(ds) {
+  S.date = ds;
+  S.tasks = load(ds);
+  S.todos = loadTodo(ds);
+  S.activeId = null; stopRAF(); stopBg();
+  scheduleAlarms();
+  render();
 }
 
 function changeDate(d) {
@@ -867,6 +1096,9 @@ async function init() {
   S.tasks=load(S.date);
   S.todos=loadTodo(S.date);
   S.templates=loadTmpl();
+  S.reward=loadReward();
+  // 旧フィールド名 alarmedPre5 → alarmedPre のマイグレーション
+  S.tasks.forEach(t => { if (t.alarmedPre5 !== undefined && t.alarmedPre === undefined) { t.alarmedPre = t.alarmedPre5; delete t.alarmedPre5; } });
   const active=S.tasks.find(t=>t.status==='active'&&t.timerStartedAt);
   if(active)S.activeId=active.id;
   reqNotif();

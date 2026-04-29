@@ -1099,3 +1099,269 @@ html, body {
   background: #ef4444;
   color: white;
 }
+
+/* ════════════════════════════════════════
+   ★ v2 拡張: カレンダー / stats card / overlay
+   ════════════════════════════════════════ */
+
+/* ── ヘッダー（コンパクト化） ──────────── */
+.header-compact {
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px 4px !important;
+}
+.header-compact .header-eyebrow { margin-bottom: 2px; }
+.header-compact .header-date { font-size: 24px; margin-bottom: 8px; }
+
+/* ── カレンダー週ストリップ ──────────── */
+.cal-strip {
+  background: var(--card);
+  margin: 0 12px 12px;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 10px 8px 8px;
+}
+.cal-month-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 8px;
+}
+.cal-month-btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.cal-month-btn:active { background: var(--card2); }
+.cal-nav-mini {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cal-nav-btn {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--card2);
+  border: none;
+  color: var(--text2);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.cal-today-btn {
+  background: var(--card2);
+  color: var(--text);
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 99px;
+  cursor: pointer;
+}
+.cal-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 6px 2px 4px;
+  cursor: pointer;
+  border-radius: 12px;
+  min-height: 52px;
+  transition: background 0.15s;
+}
+.cal-day:active { background: var(--card2); }
+.cal-day.is-selected {
+  background: var(--text);
+  color: var(--card);
+}
+.cal-day.is-selected .cal-dow,
+.cal-day.is-selected .cal-num { color: var(--card); }
+.cal-day.is-today:not(.is-selected) .cal-num {
+  color: #ef4444;
+  font-weight: 800;
+}
+.cal-dow {
+  font-size: 10px;
+  color: var(--text2);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.cal-num {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.cal-dot {
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: transparent;
+  margin-top: 2px;
+}
+.cal-dot.on { background: #ef4444; }
+.cal-day.is-selected .cal-dot.on { background: var(--card); }
+
+/* ── stats カード (達成率 + ご褒美) ───── */
+.stats-card {
+  background: var(--card);
+  margin: 0 12px 12px;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+.reward-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.4;
+}
+.reward-icon { font-size: 18px; flex-shrink: 0; }
+.reward-text { flex: 1; }
+.reward-text b { color: var(--text); font-weight: 700; }
+.reward-edit {
+  background: var(--card2);
+  border: none;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── セクションタイトル ──────────────── */
+.section-title-row {
+  padding: 16px 16px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+.section-sub {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  margin-left: 6px;
+}
+.section-empty {
+  text-align: center;
+  padding: 20px 16px;
+  color: var(--text3);
+  font-size: 13px;
+}
+.section-empty-icon { font-size: 24px; opacity: 0.5; margin-bottom: 6px; }
+.section-empty-text { font-size: 13px; }
+
+/* ── やることの「時間化」ボタン ───────── */
+.todo-toschedule {
+  background: transparent;
+  border: 1px solid var(--border);
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  margin-right: 4px;
+  color: var(--text2);
+}
+.todo-toschedule:active { background: var(--card2); }
+
+/* ── フォームの hidden 切替 ───────────── */
+.hidden { display: none !important; }
+
+/* ── オーバーレイ (月選択・ご褒美設定) ─ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 9000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  animation: alarmFadeIn 0.18s ease-out;
+}
+.overlay-card {
+  background: var(--card);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 380px;
+  padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.2);
+}
+.overlay-head {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 16px;
+  text-align: center;
+}
+.overlay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.overlay-row label {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 600;
+}
+.overlay-select, .month-input {
+  background: var(--card2);
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+.month-input { width: 100%; padding: 12px; margin-bottom: 4px; text-align: center; font-size: 16px; }
+.overlay-btns {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.overlay-cancel, .overlay-ok {
+  flex: 1;
+  padding: 12px 0;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.overlay-cancel {
+  background: var(--card2);
+  color: var(--text);
+}
+.overlay-ok {
+  background: #ef4444;
+  color: white;
+}
+.overlay-cancel:active, .overlay-ok:active { opacity: 0.7; }
