@@ -291,9 +291,9 @@ function renderSchedule() {
 
   const bottomBar = S.tab === 'schedule'
     ? `<div class="bottom-bar">
-        ${st.total>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
-        ${S.templates.length>0?'<button class="bar-btn" id="btn-templates">固定予定</button>':''}
         <button class="bar-btn primary" id="btn-add">＋ タスク追加</button>
+        ${S.templates.length>0?'<button class="bar-btn" id="btn-templates">固定予定</button>':''}
+        ${st.total>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
        </div>`
     : `<div class="bottom-bar">
         <button class="bar-btn primary" id="btn-todo-add-bar">＋ 追加</button>
