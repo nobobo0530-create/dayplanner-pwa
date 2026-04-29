@@ -71,21 +71,28 @@ function loadTmpl() { try{return JSON.parse(localStorage.getItem(TMPL_KEY)||'[]'
 function saveReward() { try{localStorage.setItem(REWARD_KEY,JSON.stringify(S.reward));}catch(_){} }
 function loadReward() { try{const r=JSON.parse(localStorage.getItem(REWARD_KEY)||'null'); return r||{thresholdPct:80,durationMin:30};}catch(_){return{thresholdPct:80,durationMin:30};} }
 
-// カレンダードット表示用: タスクのある日付を Set で返す
-function loadAllTaskDates() {
-  const dates = new Set();
+// カレンダー表示用: 日付 → タスク配列 のマップ
+function loadTasksByDate() {
+  const map = new Map();
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k && k.startsWith(tasksKeyPrefix)) {
         const arr = JSON.parse(localStorage.getItem(k) || '[]');
         if (Array.isArray(arr) && arr.length > 0) {
-          dates.add(k.slice(tasksKeyPrefix.length));
+          // 開始時刻順にソート
+          arr.sort((a,b) => toMin(a.startTime||'00:00') - toMin(b.startTime||'00:00'));
+          map.set(k.slice(tasksKeyPrefix.length), arr);
         }
       }
     }
   } catch(_) {}
-  return dates;
+  return map;
+}
+
+// 後方互換用 (カレンダー Set 版)
+function loadAllTaskDates() {
+  return new Set(loadTasksByDate().keys());
 }
 
 // ── Tasks ─────────────────────────────────────────
@@ -350,7 +357,7 @@ function renderTabSchedule() {
 
 // ── Tab 2: Calendar (月グリッド) ─────────────────
 function renderTabCalendar() {
-  const taskDates = loadAllTaskDates();
+  const tasksByDate = loadTasksByDate();
   // 表示する月を決定 (S.calendarMonth or S.date 月)
   const cur = S.calendarMonth
     ? new Date(S.calendarMonth + '-01T00:00:00')
@@ -379,7 +386,7 @@ function renderTabCalendar() {
         dow: d.getDay(),
         isToday: ds === todayStr,
         isSelected: ds === S.date,
-        hasTasks: taskDates.has(ds),
+        tasks: tasksByDate.get(ds) || [],
       });
     }
   }
@@ -404,9 +411,17 @@ function renderTabCalendar() {
         if (c.isToday) cls.push('is-today');
         if (c.dow === 0) cls.push('is-sunday');
         if (c.dow === 6) cls.push('is-saturday');
+        // タスク表示: 1件 = タイトル、2件以上 = タイトル + "+N"
+        let evHtml = '';
+        if (c.tasks.length === 1) {
+          evHtml = `<div class="cal-cell-event">${esc(c.tasks[0].title)}</div>`;
+        } else if (c.tasks.length > 1) {
+          evHtml = `<div class="cal-cell-event">${esc(c.tasks[0].title)}</div>
+                    <div class="cal-cell-more">+${c.tasks.length - 1}</div>`;
+        }
         return `<button class="${cls.join(' ')}" data-cal-day="${c.ds}">
           <div class="cal-cell-num">${c.num}</div>
-          ${c.hasTasks ? '<div class="cal-cell-dot"></div>' : ''}
+          ${evHtml}
         </button>`;
       }).join('')}
     </div>
@@ -506,9 +521,7 @@ function renderCard(t) {
 
   const meta = isActive
     ? `<div class="card-meta card-timer-text" id="mini-${t.id}">計測中...</div>`
-    : t.status==='done'&&t.resultValue
-      ? `<div class="card-meta card-result-text">成果：${esc(t.resultValue)}${esc(t.resultUnit)}</div>`
-      : '';
+    : '';
 
   const canStart = t.status==='pending'||isActive;
   const startLabel = isActive ? '▶ タイマーを開く' : '▶ 開始する';
@@ -686,15 +699,6 @@ function renderForm() {
   const d=S.formData||{}, isEdit=!!d.id;
   // 「時間を指定する」: task mode = ON, todo mode = OFF
   const hasTime = d._mode === 'todo' ? false : (d.startTime !== undefined || d._mode === 'task' || isEdit);
-  const presets=[{label:'出品数',unit:'件'},{label:'仕入れ数',unit:'件'},{label:'売上',unit:'円'},{label:'利益',unit:'円'}];
-  const mp=presets.find(p=>p.label===d.resultLabel&&p.unit===d.resultUnit);
-  const isCustom=d.resultLabel&&!mp, isNone=!d.resultLabel;
-  const chips=[
-    `<button class="chip${isNone?' on':''}" data-chip="none">なし</button>`,
-    ...presets.map(p=>`<button class="chip${mp?.label===p.label?' on':''}" data-chip-l="${p.label}" data-chip-u="${p.unit}">${p.label}</button>`),
-    `<button class="chip${isCustom?' on':''}" data-chip="custom">カスタム</button>`,
-  ].join('');
-
   // Check if this task is already a template
   const isTemplate = d.id && S.templates.some(t=>t.sourceId===d.id);
   // アラーム選択肢 (デフォルト 5分前)
@@ -744,14 +748,6 @@ function renderForm() {
         <div class="chips-section">
           <div class="chips-title">アラーム (開始時刻に加えて)</div>
           <div class="chips">${alarmChips}</div>
-        </div>
-        <div class="chips-section">
-          <div class="chips-title">成果の記録</div>
-          <div class="chips">${chips}</div>
-          <div class="custom-fields${isCustom?' show':''}" id="custom-fields">
-            <input class="finput-sm" id="f-rl" type="text" value="${esc(isCustom?d.resultLabel:'')}" placeholder="ラベル（例：仕入れ数）">
-            <input class="finput-sm" id="f-ru" type="text" value="${esc(isCustom?d.resultUnit:'')}" placeholder="単位" style="width:90px;flex-shrink:0">
-          </div>
         </div>
         <label class="tmpl-toggle">
           <div class="tmpl-toggle-text">
@@ -937,7 +933,12 @@ function bind() {
       if(document.getElementById('chk-shift')?.checked)shiftAfter(S.activeId,10);
       save(); stopRAF(); render();
     });
-    on('btn-done',()=>{stopRAF();S.view='result';render();});
+    on('btn-done',()=>{
+      const t=S.tasks.find(t=>t.id===S.activeId);
+      if(t){t.status='done';t.timerStartedAt=null;}
+      stopRAF(); save(); S.activeId=null;
+      S.view='schedule'; render();
+    });
     on('btn-skip',()=>{
       const t=S.tasks.find(t=>t.id===S.activeId);
       if(t){t.status='skipped';t.timerStartedAt=null;}
@@ -1022,15 +1023,6 @@ function bind() {
     });
     on('form-save',saveForm);
 
-    // 成果記録の chip
-    all('.chip:not(.weight-chip):not(.alarm-chip)',c=>c.addEventListener('click',e=>{
-      all('.chip:not(.weight-chip):not(.alarm-chip)',x=>x.classList.remove('on')); e.currentTarget.classList.add('on');
-      const cf=document.getElementById('custom-fields');
-      const k=e.currentTarget.dataset.chip,l=e.currentTarget.dataset.chipL,u=e.currentTarget.dataset.chipU;
-      if(k==='none'){cf.classList.remove('show');document.getElementById('f-rl').value='';document.getElementById('f-ru').value='';}
-      else if(k==='custom'){cf.classList.add('show');}
-      else{cf.classList.remove('show');document.getElementById('f-rl').value=l;document.getElementById('f-ru').value=u;}
-    }));
     // 重さの chip
     all('.weight-chip',c=>c.addEventListener('click',e=>{
       all('.weight-chip',x=>x.classList.remove('on'));
@@ -1066,8 +1058,6 @@ function saveForm() {
   const s=document.querySelector('[name="startTime"]')?.value;
   const e=document.querySelector('[name="endTime"]')?.value;
   if(toMin(s)>=toMin(e)){alert('終了時間は開始時間より後にしてください');return;}
-  const rl=document.getElementById('f-rl')?.value.trim()||'';
-  const ru=document.getElementById('f-ru')?.value.trim()||'';
   const weightEl=document.querySelector('.weight-chip.on');
   const weight=weightEl?.dataset.weight || 'normal';
   const alarmEl=document.querySelector('.alarm-chip.on');
@@ -1077,13 +1067,13 @@ function saveForm() {
   let taskId;
   if(S.formData?.id){
     const i=S.tasks.findIndex(t=>t.id===S.formData.id);
-    if(i>=0){S.tasks[i]={...S.tasks[i],title,startTime:s,endTime:e,weight,alarmBefore,resultLabel:rl,resultUnit:ru,
+    if(i>=0){S.tasks[i]={...S.tasks[i],title,startTime:s,endTime:e,weight,alarmBefore,
             // 開始時刻が変わったらアラームフラグをリセット
             alarmedPre: S.tasks[i].startTime===s ? S.tasks[i].alarmedPre : false,
             alarmedStart: S.tasks[i].startTime===s ? S.tasks[i].alarmedStart : false};}
     taskId=S.formData.id;
   } else {
-    const task=mkTask({title,startTime:s,endTime:e,weight,alarmBefore,resultLabel:rl,resultUnit:ru});
+    const task=mkTask({title,startTime:s,endTime:e,weight,alarmBefore});
     S.tasks.push(task);
     taskId=task.id;
   }
@@ -1091,7 +1081,7 @@ function saveForm() {
   // Template save/remove
   if(saveAsTemplate){
     S.templates=S.templates.filter(t=>t.sourceId!==taskId);
-    S.templates.push({id:uid(),sourceId:taskId,title,startTime:s,endTime:e,weight,resultLabel:rl,resultUnit:ru});
+    S.templates.push({id:uid(),sourceId:taskId,title,startTime:s,endTime:e,weight});
     saveTmpl();
   } else if(S.formData?.id){
     const had=S.templates.some(t=>t.sourceId===taskId);
