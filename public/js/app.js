@@ -462,7 +462,7 @@ function renderSchedule() {
     case 'todo':     body = renderTabTodo();     break;
     default:         body = renderTabSchedule();
   }
-  return `<div style="position:relative;min-height:100vh;padding-bottom:140px;">
+  return `<div class="tab-wrapper">
     ${body}
     ${renderTabBar()}
     ${S.rewardSettingOpen ? renderRewardSetting() : ''}
