@@ -881,7 +881,21 @@ async function init() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) scheduleAlarms();
   });
-  if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  // ★ Service Worker 登録 + 自動更新検知
+  if ('serviceWorker' in navigator) {
+    // 新SWが制御を取得したら自動リロード（ユーザーは何もしなくていい）
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      console.log('[SW] new version → reloading');
+      window.location.reload();
+    });
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // 起動時とアプリ復帰時に毎回SW更新チェック
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) reg.update().catch(() => {});
+      });
+    }).catch(() => {});
+  }
   render();
 }
 init();
