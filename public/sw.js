@@ -1,5 +1,5 @@
-// デイプラン Service Worker v2 - network-first で自動更新対応
-const CACHE = 'dayplanner-v2';
+// デイプラン Service Worker v3 - network-first + 通知クリック対応
+const CACHE = 'dayplanner-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -25,6 +25,44 @@ self.addEventListener('activate', e => {
       .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// ── 通知クリック処理 ──
+// 通知本体に { data: { url: '/?openTodo=tomorrow' } } を入れておくと、
+// タップ時に該当URLを開く (PWA未起動時も含む)
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const targetUrl = (e.notification.data && e.notification.data.url) || '/';
+  e.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // 既存ウィンドウがあれば focus + navigate
+    for (const c of clientsList) {
+      if ('focus' in c) {
+        await c.focus();
+        if (c.navigate) { try { await c.navigate(targetUrl); } catch(_) {} }
+        return;
+      }
+    }
+    // 無ければ新規ウィンドウ
+    if (self.clients.openWindow) {
+      await self.clients.openWindow(targetUrl);
+    }
+  })());
+});
+
+// ── Push 受信 (将来用) ──
+self.addEventListener('push', e => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch(_) {}
+  const title = data.title || '🌙 明日の予定を立てる時間です';
+  const opts = {
+    body: data.body || 'タップしてやることを整理しましょう',
+    tag: data.tag || 'night-planner',
+    data: { url: data.url || '/?openTodo=tomorrow' },
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+  };
+  e.waitUntil(self.registration.showNotification(title, opts));
 });
 
 // HTML/JS/CSS は network-first（最新優先）・失敗時にキャッシュ

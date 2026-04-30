@@ -169,16 +169,60 @@ async function reqNotif() {
   if(!('Notification'in window))return;
   if(Notification.permission!=='granted')await Notification.requestPermission();
   if(Notification.permission==='granted'){
+    // 22:00 の通知が今日まだ出ていない場合のフラグ (1日1回)
+    let lastNotified22 = null;
     setInterval(()=>{
       const d=new Date();
-      if(d.getMinutes()===0){
-        if(d.getHours()===8) notify('☀️ おはよう！','今日の予定を立てましょう');
-        if(d.getHours()===22)notify('🌙 お疲れ様！','振り返りと明日の準備をしましょう');
+      const today22Key = `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+      // 22:00ぴったり〜22:01の範囲で1日1回発火
+      if(d.getHours()===22 && d.getMinutes() < 5 && lastNotified22 !== today22Key){
+        lastNotified22 = today22Key;
+        notifyNightPlanner();
       }
     },60000);
   }
 }
-function notify(title,body){if(Notification.permission==='granted')try{new Notification(title,{body});}catch(_){}}
+
+// 通常通知 (本文のみ・クリック時 focus)
+function notify(title, body, opts){
+  if(Notification.permission!=='granted') return;
+  try {
+    const n = new Notification(title, { body, ...(opts||{}) });
+    if (opts?.onclick) n.onclick = opts.onclick;
+  } catch(_) {}
+}
+
+// 22時の「明日の予定を立てる時間です」通知
+// Service Worker 経由で出すと PWA 閉じてても通知タップで該当画面へ遷移できる
+async function notifyNightPlanner(){
+  const title = '🌙 明日の予定を立てる時間です';
+  const body  = 'タップしてやることを整理しましょう';
+  const targetUrl = '/?openTodo=tomorrow';
+  // SW があれば SW 経由で通知 (notificationclick で URL 飛べる)
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) {
+      await reg.showNotification(title, {
+        body, tag: 'night-planner',
+        data: { url: targetUrl },
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+      });
+      return;
+    }
+  } catch(_) {}
+  // フォールバック: 通常通知 (フォアグラウンドのみ click 動作)
+  notify(title, body, {
+    tag: 'night-planner',
+    onclick: () => {
+      try { window.focus(); } catch(_) {}
+      const tom = new Date(); tom.setDate(tom.getDate()+1);
+      const ymd = `${tom.getFullYear()}-${p2(tom.getMonth()+1)}-${p2(tom.getDate())}`;
+      S.tab = 'todo';
+      setDate(ymd);
+    },
+  });
+}
 
 // ── Alarm system ─────────────────────────────────
 // 音生成（外部ファイル不要・Web Audio API でビープ音）
@@ -442,14 +486,27 @@ function renderTodoList() {
   const pending = S.todos.filter(t=>!t.done);
   const done    = S.todos.filter(t=>t.done);
 
-  const mkItem = t => `<div class="todo-item ${t.done?'is-done':''}" data-tid="${t.id}">
-    <button class="todo-check ${t.done?'checked':''}" data-tcheck="${t.id}">
-      ${t.done?'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':''}
-    </button>
-    <span class="todo-text">${esc(t.text)}</span>
-    ${!t.done?`<button class="todo-toschedule" data-toschedule="${t.id}" title="時間を決めてスケジュール化">🕐</button>`:''}
-    <button class="todo-del" data-tdel="${t.id}">×</button>
-  </div>`;
+  // 並び替え用に未完了タスクの index を取得
+  const pendingIds = pending.map(p => p.id);
+
+  const mkItem = (t, isDone) => {
+    const isFirst = !isDone && pendingIds[0] === t.id;
+    const isLast  = !isDone && pendingIds[pendingIds.length-1] === t.id;
+    const sortBtns = isDone ? '' : `
+      <div class="todo-sort-col">
+        <button class="todo-sort-btn ${isFirst?'is-disabled':''}" data-tup="${t.id}" ${isFirst?'disabled':''} title="上へ">▲</button>
+        <button class="todo-sort-btn ${isLast?'is-disabled':''}" data-tdown="${t.id}" ${isLast?'disabled':''} title="下へ">▼</button>
+      </div>`;
+    return `<div class="todo-item ${isDone?'is-done':''}" data-tid="${t.id}">
+      <button class="todo-check ${isDone?'checked':''}" data-tcheck="${t.id}">
+        ${isDone?'<svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 8l3.5 3.5L13 4.5" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':''}
+      </button>
+      <span class="todo-text">${esc(t.text)}</span>
+      ${sortBtns}
+      ${!isDone?`<button class="todo-toschedule" data-toschedule="${t.id}" title="時間を決めてスケジュール化">🕐</button>`:''}
+      <button class="todo-del" data-tdel="${t.id}">×</button>
+    </div>`;
+  };
 
   return `<div class="todo-screen">
     <div class="todo-input-row">
@@ -460,10 +517,10 @@ function renderTodoList() {
         <div class="section-empty-icon">✓</div>
         <div class="section-empty-text">時間が決まってない<br>「やること」をメモしておこう</div>
       </div>` : ''}
-    ${pending.length>0 ? `<div class="todo-group">${pending.map(mkItem).join('')}</div>` : ''}
+    ${pending.length>0 ? `<div class="todo-group">${pending.map(t=>mkItem(t,false)).join('')}</div>` : ''}
     ${done.length>0 ? `<div class="todo-group todo-done-group">
       <div class="todo-group-label">完了 ${done.length}</div>
-      ${done.map(mkItem).join('')}
+      ${done.map(t=>mkItem(t,true)).join('')}
     </div>` : ''}
   </div>`;
 }
@@ -908,6 +965,21 @@ function bind() {
         const id=e.currentTarget.dataset.tdel;
         S.todos=S.todos.filter(t=>t.id!==id); saveTodo(); render();
       }));
+      // ★ やること並び替え (上下ボタン) ──
+      const moveTodo = (id, dir) => {
+        // pending のみで並び替え (done は触らない)
+        const pendingIdx = S.todos.filter(t=>!t.done).findIndex(t=>t.id===id);
+        const pending = S.todos.filter(t=>!t.done);
+        const done = S.todos.filter(t=>t.done);
+        const ni = pendingIdx + dir;
+        if (ni < 0 || ni >= pending.length) return;
+        // swap
+        [pending[pendingIdx], pending[ni]] = [pending[ni], pending[pendingIdx]];
+        S.todos = [...pending, ...done];
+        saveTodo(); render();
+      };
+      all('[data-tup]',  btn=>btn.addEventListener('click',e=>moveTodo(e.currentTarget.dataset.tup,  -1)));
+      all('[data-tdown]',btn=>btn.addEventListener('click',e=>moveTodo(e.currentTarget.dataset.tdown,+1)));
       // ★ やること → スケジュール変換 (スケジュールタブに移って form 開く)
       all('[data-toschedule]',btn=>btn.addEventListener('click',e=>{
         const id=e.currentTarget.dataset.toschedule;
@@ -1130,6 +1202,24 @@ function copyTomorrow(task) {
 }
 
 async function init() {
+  // ★ URLパラメータで起動時の画面を制御 (通知タップ → ?openTodo=tomorrow など)
+  try {
+    const url = new URL(window.location.href);
+    const openTodo = url.searchParams.get('openTodo');
+    if (openTodo === 'tomorrow') {
+      const tom = new Date(); tom.setDate(tom.getDate()+1);
+      S.date = `${tom.getFullYear()}-${p2(tom.getMonth()+1)}-${p2(tom.getDate())}`;
+      S.tab = 'todo';
+    } else if (openTodo === 'today') {
+      S.tab = 'todo';
+    }
+    // パラメータをURLから消す (リロード時に再発動しないため)
+    if (openTodo) {
+      url.searchParams.delete('openTodo');
+      history.replaceState(null, '', url.pathname + url.search);
+    }
+  } catch(_) {}
+
   S.tasks=load(S.date);
   S.todos=loadTodo(S.date);
   S.templates=loadTmpl();

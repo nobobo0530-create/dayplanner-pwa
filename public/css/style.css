@@ -1279,6 +1279,32 @@ html, body {
 }
 .todo-toschedule:active { background: var(--card2); }
 
+/* ── やること並び替えボタン (▲▼) ──────── */
+.todo-sort-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.todo-sort-btn {
+  background: transparent;
+  border: none;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+  font-size: 9px;
+  color: var(--text2);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+.todo-sort-btn:active:not(.is-disabled) { background: var(--card2); color: var(--text); }
+.todo-sort-btn.is-disabled { opacity: 0.25; cursor: default; }
+
 /* ── フォームの hidden 切替 ───────────── */
 .hidden { display: none !important; }
 
