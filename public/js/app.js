@@ -415,8 +415,7 @@ function renderTodoList() {
 
   return `<div class="todo-screen">
     <div class="todo-input-row">
-      <input type="text" class="todo-input" id="todo-input" placeholder="やることを追加…" maxlength="50">
-      <button class="todo-add-btn" id="todo-add">追加</button>
+      <input type="text" class="todo-input" id="todo-input" placeholder="やることを入力 → Enterで追加" maxlength="50">
     </div>
     ${S.todos.length===0 ? `<div class="section-empty">
         <div class="section-empty-icon">✓</div>
@@ -901,7 +900,6 @@ function bind() {
       render();
       setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
     };
-    on('todo-add',addTodo);
     document.getElementById('todo-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
     all('[data-tcheck]',btn=>btn.addEventListener('click',e=>{
       const id=e.currentTarget.dataset.tcheck;
