@@ -1691,3 +1691,87 @@ html, body {
   line-height: 1.5;
 }
 
+
+/* ════════════════════════════════════════
+   ★ v5: タスク名候補 + 完了チェックボタン
+   ════════════════════════════════════════ */
+
+/* ── タスク名候補チップ ────────────── */
+.suggest-row {
+  margin-top: 10px;
+}
+.suggest-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text2);
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.suggest-chip {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 99px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.suggest-chip:active {
+  background: var(--text);
+  color: var(--card);
+  border-color: var(--text);
+}
+
+/* ── スケジュールカード: 完了チェックボタン ── */
+.card-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 14px 10px;
+}
+.card-row .card-body {
+  flex: 1;
+  padding: 0;
+}
+.card-done-toggle {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-top: 2px;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-done-toggle:active {
+  transform: scale(0.92);
+}
+.card-done-toggle.is-on {
+  background: #22c55e;
+  border-color: #22c55e;
+}
+.card-done-text {
+  color: #22c55e;
+  font-weight: 700;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* card-body の元のpaddingを上書き (card-row 内に入ったため) */
+.card .card-body { padding: 0; }

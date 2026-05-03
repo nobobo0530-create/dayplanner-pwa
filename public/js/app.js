@@ -6,6 +6,7 @@ const tKey = d => `${STORE}tasks_${d}`;
 const todKey = d => `${STORE}todo_${d}`;
 const TMPL_KEY  = `${STORE}templates`;
 const REWARD_KEY = `${STORE}reward`;
+const SUGGEST_KEY = `${STORE}suggestions`;
 // 全タスク保存日のキャッシュキー (カレンダーのドット表示用)
 const tasksKeyPrefix = `${STORE}tasks_`;
 
@@ -14,6 +15,7 @@ const S = {
   tasks: [],
   todos: [],
   templates: [],
+  suggestions: [],
   reward: { thresholdPct: 80, durationMin: 30 },
   view: 'schedule',        // 'schedule' | 'timer' | 'result' | 'review' | 'templates' | 'form'
   tab: 'schedule',         // ★ メインタブ: 'schedule' | 'calendar' | 'todo'
@@ -70,6 +72,32 @@ function saveTmpl() { try{localStorage.setItem(TMPL_KEY,JSON.stringify(S.templat
 function loadTmpl() { try{return JSON.parse(localStorage.getItem(TMPL_KEY)||'[]');}catch(_){return[];} }
 function saveReward() { try{localStorage.setItem(REWARD_KEY,JSON.stringify(S.reward));}catch(_){} }
 function loadReward() { try{const r=JSON.parse(localStorage.getItem(REWARD_KEY)||'null'); return r||{thresholdPct:80,durationMin:30};}catch(_){return{thresholdPct:80,durationMin:30};} }
+
+// ── タスク名サジェスト (使用頻度順 + 最近使った順) ─────
+function loadSuggestions() {
+  try { return JSON.parse(localStorage.getItem(SUGGEST_KEY) || '[]'); } catch(_) { return []; }
+}
+function saveSuggestions() {
+  try { localStorage.setItem(SUGGEST_KEY, JSON.stringify(S.suggestions)); } catch(_) {}
+}
+function bumpSuggestion(text) {
+  const t = (text || '').trim();
+  if (!t) return;
+  const list = S.suggestions || (S.suggestions = []);
+  const ex = list.find(s => s.text === t);
+  const now = new Date().toISOString();
+  if (ex) { ex.count = (ex.count || 1) + 1; ex.lastUsed = now; }
+  else    { list.push({ text: t, count: 1, lastUsed: now }); }
+  // 使用回数 desc → 最近使った順 desc
+  list.sort((a, b) => (b.count - a.count) || ((b.lastUsed||'').localeCompare(a.lastUsed||'')));
+  // 上位30件のみ保持 (古いものは消える)
+  if (list.length > 30) S.suggestions = list.slice(0, 30);
+  saveSuggestions();
+}
+function deleteSuggestion(text) {
+  S.suggestions = (S.suggestions || []).filter(s => s.text !== text);
+  saveSuggestions();
+}
 
 // カレンダー表示用: 日付 → タスク配列 のマップ
 function loadTasksByDate() {
@@ -482,26 +510,33 @@ function renderRewardSetting() {
 
 function renderCard(t) {
   const isActive=t.id===S.activeId;
+  const isDone  =t.status==='done';
   const d=dur(t.startTime,t.endTime);
   const w = WEIGHTS[t.weight] || WEIGHTS.normal;
   let cls='card';
   if(isActive) cls+=' is-active';
-  else if(t.status==='done')    cls+=' is-done';
+  else if(isDone)               cls+=' is-done';
   else if(t.status==='skipped') cls+=' is-skipped';
 
   const meta = isActive
     ? `<div class="card-meta card-timer-text" id="mini-${t.id}">計測中...</div>`
-    : '';
+    : (isDone ? `<div class="card-meta card-done-text">✓ 完了</div>` : '');
 
   const canStart = t.status==='pending'||isActive;
   const startLabel = isActive ? '▶ タイマーを開く' : '▶ 開始する';
   const weightTag = `<span class="weight-tag" style="background:${w.bg};color:${w.color};border:1px solid ${w.border};">${w.label}</span>`;
 
+  // 完了/未完了を1タップで切替するチェックボタン
+  const doneBtn = `<button class="card-done-toggle ${isDone?'is-on':''}" data-done="${t.id}" title="${isDone?'未完了に戻す':'完了にする'}" aria-label="${isDone?'未完了に戻す':'完了にする'}">${isDone?'<svg width="18" height="18" viewBox="0 0 18 18"><path d="M3 9l4 4 8-9" stroke="white" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</button>`;
+
   return `<div class="${cls}" style="border-left:4px solid ${w.color};">
-    <div class="card-body">
-      <div class="card-time">${t.startTime}〜${t.endTime}<span class="dur-tag">${fDur(d)}</span>${weightTag}</div>
-      <div class="card-title">${esc(t.title)}</div>
-      ${meta}
+    <div class="card-row">
+      ${doneBtn}
+      <div class="card-body">
+        <div class="card-time">${t.startTime}〜${t.endTime}<span class="dur-tag">${fDur(d)}</span>${weightTag}</div>
+        <div class="card-title">${esc(t.title)}</div>
+        ${meta}
+      </div>
     </div>
     <div class="card-footer">
       ${canStart?`<button class="card-start-btn" data-id="${t.id}">${startLabel}</button>`:'<div style="flex:1"></div>'}
@@ -686,6 +721,13 @@ function renderForm() {
       <div class="field-section">
         <div class="field-section-title">タスク名</div>
         <input class="finput" id="f-title" type="text" value="${esc(d.title||d.text||'')}" placeholder="仕入れ、出品、休憩…" maxlength="30">
+        ${(!isEdit && (S.suggestions||[]).length > 0) ? `
+        <div class="suggest-row" id="suggest-row">
+          <div class="suggest-label">よく使うタスク</div>
+          <div class="suggest-chips">
+            ${S.suggestions.slice(0, 8).map(s => `<button type="button" class="suggest-chip" data-suggest="${esc(s.text)}">${esc(s.text)}</button>`).join('')}
+          </div>
+        </div>` : ''}
         ${!isEdit ? `
         <label class="tmpl-toggle" style="margin-top:12px;">
           <div class="tmpl-toggle-text">
@@ -829,13 +871,31 @@ function bind() {
       const t=S.tasks.find(t=>t.id===e.currentTarget.dataset.edit); if(!t)return;
       S.formData={...t}; S.view='form'; render();
     }));
+    // ★ 完了トグル (チェック) ──
+    all('[data-done]',btn=>btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const id=e.currentTarget.dataset.done;
+      const t=S.tasks.find(x=>x.id===id); if(!t)return;
+      if (t.status==='done') {
+        // 未完了に戻す
+        t.status='pending';
+      } else {
+        // 完了にする (アクティブなら停止)
+        t.status='done';
+        t.timerStartedAt=null;
+        if (S.activeId===id) { S.activeId=null; stopRAF(); stopBg(); }
+      }
+      save(); scheduleAlarms(); render();
+    }));
 
     // ── やること操作 (一画面に集約) ──────────
     const addTodo=()=>{
       const inp=document.getElementById('todo-input');
       const text=inp?.value.trim(); if(!text)return;
       S.todos.push({id:uid(),text,done:false});
-      saveTodo(); render();
+      saveTodo();
+      bumpSuggestion(text);   // ★ やる事クイック追加でも候補に記録
+      render();
       setTimeout(()=>document.getElementById('todo-input')?.focus(),50);
     };
     on('todo-add',addTodo);
@@ -985,6 +1045,12 @@ function bind() {
       all('.alarm-chip',x=>x.classList.remove('on'));
       e.currentTarget.classList.add('on');
     }));
+    // ★ 候補チップ → タスク名にセット
+    all('.suggest-chip',c=>c.addEventListener('click',e=>{
+      const text=e.currentTarget.dataset.suggest;
+      const inp=document.getElementById('f-title');
+      if (inp) { inp.value = text; inp.focus(); }
+    }));
   }
 }
 
@@ -1001,7 +1067,7 @@ function saveForm() {
   if (!hasTime) {
     S.todos.push({id:uid(), text:title, done:false});
     saveTodo();
-    // todo→schedule 変換中ではなく純粋な「時間OFFで追加」なので fromTodoId は無視
+    bumpSuggestion(title);   // ★ 候補に記録 (やることでも記録)
     S.formData=null; S.view='schedule'; render();
     return;
   }
@@ -1048,6 +1114,7 @@ function saveForm() {
 
   sortTasks(); save();
   scheduleAlarms();
+  bumpSuggestion(title);   // ★ スケジュール保存後も候補に記録
   S.formData=null; S.view='schedule'; render();
 }
 
@@ -1110,6 +1177,7 @@ async function init() {
   S.todos=loadTodo(S.date);
   S.templates=loadTmpl();
   S.reward=loadReward();
+  S.suggestions=loadSuggestions();
   // 旧フィールド名 alarmedPre5 → alarmedPre のマイグレーション
   S.tasks.forEach(t => { if (t.alarmedPre5 !== undefined && t.alarmedPre === undefined) { t.alarmedPre = t.alarmedPre5; delete t.alarmedPre5; } });
   const active=S.tasks.find(t=>t.status==='active'&&t.timerStartedAt);
