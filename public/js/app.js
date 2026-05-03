@@ -1062,18 +1062,24 @@ function setDate(ds) {
 }
 
 function changeDate(d) {
-  const dt=new Date(S.date+'T00:00:00'); dt.setDate(dt.getDate()+d);
-  S.date=dt.toISOString().slice(0,10);
-  S.tasks=load(S.date);
-  S.todos=loadTodo(S.date);
-  S.activeId=null; stopRAF(); stopBg();
+  // 現在の S.date から派生 → 直接書き換えず一旦 Date オブジェクトで計算
+  const dt = new Date(S.date + 'T00:00:00');
+  dt.setDate(dt.getDate() + d);
+  // ★ UTC変換 (toISOString) は使わない。ローカル日付として組み立てる。
+  // toISOString() を使うと JST→UTC で日付が前日にずれて移動できなくなる
+  S.date = `${dt.getFullYear()}-${p2(dt.getMonth()+1)}-${p2(dt.getDate())}`;
+  S.tasks = load(S.date);
+  S.todos = loadTodo(S.date);
+  S.activeId = null; stopRAF(); stopBg();
   scheduleAlarms();   // ★ 日付変更時もアラーム再スケジュール
   render();
 }
 
 function copyTomorrow(task) {
-  const d=new Date(S.date+'T00:00:00'); d.setDate(d.getDate()+1);
-  const tom=d.toISOString().slice(0,10);
+  const d = new Date(S.date + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  // ★ ローカル日付として組み立てる (UTC ズレ防止)
+  const tom = `${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}`;
   const tasks=load(tom);
   if(tasks.find(t=>t.title===task.title&&t.startTime===task.startTime))return;
   tasks.push(mkTask({title:task.title,startTime:task.startTime,endTime:task.endTime,resultLabel:task.resultLabel,resultUnit:task.resultUnit}));
