@@ -408,10 +408,6 @@ function renderTodoList() {
     <div class="todo-input-row">
       <input type="text" class="todo-input" id="todo-input" placeholder="メモを入力 → Enterで追加" maxlength="50">
     </div>
-    ${S.todos.length===0 ? `<div class="section-empty">
-        <div class="section-empty-icon">📝</div>
-        <div class="section-empty-text">気になることを<br>メモしておこう</div>
-      </div>` : ''}
     ${pending.length>0 ? `<div class="todo-group">${pending.map(t=>mkItem(t,false)).join('')}</div>` : ''}
     ${done.length>0 ? `<div class="todo-group todo-done-group">
       <div class="todo-group-label">完了 ${done.length}</div>

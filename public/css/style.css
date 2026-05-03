@@ -246,7 +246,7 @@ html, body {
 
 /* ── Bottom bar (通常フロー: タブバー上に配置) ── */
 .bottom-bar {
-  margin: 16px 16px 0;
+  margin: 8px 16px 0;
   padding: 0;
   display: flex;
   gap: 10px;
@@ -1650,9 +1650,15 @@ html, body {
   font-size: 12px;
 }
 
-/* ── 中間スペーサー (スケジュールと+追加の間) ── */
+/* ── 中間スペーサー: 残りスペースを吸収して下1/5にメモ+追加を固定 ── */
 .mid-spacer {
-  height: 60px;
+  flex: 1;
+  min-height: 24px;
+}
+.main-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 /* ── 取り消しボタン (完了直後カード用) ── */
@@ -1749,14 +1755,25 @@ html, body {
 }
 .hist-restore:active { opacity: 0.85; }
 
-/* ── メモセクション (一番下) ── */
+/* ── メモセクション (一番下・コンパクト) ── */
 .memo-section {
-  margin-top: 16px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
 }
 .memo-section .section-title-row {
-  margin-bottom: 4px;
+  padding: 4px 16px;
+  margin-bottom: 0;
+}
+.memo-section .todo-screen {
+  padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+.memo-section .todo-input-row {
+  margin-bottom: 0;
+}
+.memo-section .todo-input {
+  padding: 10px 14px;
+  font-size: 14px;
 }
 
 /* ── メインヘッダー (日付 + 前後日ナビ) ─── */
