@@ -415,11 +415,11 @@ function renderTodoList() {
 
   return `<div class="todo-screen">
     <div class="todo-input-row">
-      <input type="text" class="todo-input" id="todo-input" placeholder="やることを入力 → Enterで追加" maxlength="50">
+      <input type="text" class="todo-input" id="todo-input" placeholder="メモを入力 → Enterで追加" maxlength="50">
     </div>
     ${S.todos.length===0 ? `<div class="section-empty">
-        <div class="section-empty-icon">✓</div>
-        <div class="section-empty-text">時間が決まってない<br>「やること」をメモしておこう</div>
+        <div class="section-empty-icon">📝</div>
+        <div class="section-empty-text">気になることを<br>メモしておこう</div>
       </div>` : ''}
     ${pending.length>0 ? `<div class="todo-group">${pending.map(t=>mkItem(t,false)).join('')}</div>` : ''}
     ${done.length>0 ? `<div class="todo-group todo-done-group">
@@ -452,7 +452,7 @@ function renderSchedule() {
   const scheduleContent = S.tasks.length === 0
     ? `<div class="section-empty">
         <div class="section-empty-icon">⏱</div>
-        <div class="section-empty-text">今日の予定はまだありません<br>「+ 追加」または下の「やること」に 🕐 で時間を設定</div>
+        <div class="section-empty-text">今日の予定はまだありません<br>「+ 追加」で予定を作成</div>
        </div>`
     : `<div class="list">${S.tasks.map(renderCard).join('')}</div>`;
   const scheduleSection = `<div class="section-title-row section-title-main">
@@ -460,13 +460,15 @@ function renderSchedule() {
   </div>
   ${scheduleContent}`;
 
-  // ★ 下: やること (時間未定のメモ・🕐 で時間設定 → スケジュールへ)
+  // ★ 一番下: メモ (時間未定・🕐 で時間設定 → スケジュールへ)
   const pendingTodoCnt = S.todos.filter(t=>!t.done).length;
-  const todoSection = `<div class="section-title-row">
-    <h3 class="section-title">✓ やること <span class="section-sub">${pendingTodoCnt}件</span></h3>
-    ${pendingTodoCnt>0 ? '<span class="section-hint">🕐 で時間を設定 → スケジュール化</span>' : ''}
-  </div>
-  ${renderTodoList()}`;
+  const memoSection = `<div class="memo-section">
+    <div class="section-title-row">
+      <h3 class="section-title">📝 メモ <span class="section-sub">${pendingTodoCnt}件</span></h3>
+      ${pendingTodoCnt>0 ? '<span class="section-hint">🕐 で時間を設定 → スケジュール化</span>' : ''}
+    </div>
+    ${renderTodoList()}
+  </div>`;
 
   // 下部バー: + 追加
   const bottomBar = `<div class="bottom-bar">
@@ -477,9 +479,9 @@ function renderSchedule() {
   return `<div class="main-wrapper">
     ${header}
     ${scheduleSection}
-    ${todoSection}
     ${renderStatsFooter()}
     ${bottomBar}
+    ${memoSection}
     ${S.rewardSettingOpen ? renderRewardSetting() : ''}
   </div>`;
 }

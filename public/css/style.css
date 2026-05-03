@@ -1622,8 +1622,17 @@ html, body {
 /* メインラッパー */
 .main-wrapper {
   min-height: 100vh;
-  padding-bottom: calc(180px + env(safe-area-inset-bottom, 0px));
-  /* stats-footer (~80px) + bottom-bar (~60px) + 余白 (~40px) */
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── メモセクション (一番下・余白多め) ── */
+.memo-section {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.memo-section .section-title-row {
+  margin-bottom: 4px;
 }
 
 /* ── メインヘッダー (日付 + 前後日ナビ) ─── */
