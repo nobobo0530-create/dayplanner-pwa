@@ -1625,6 +1625,36 @@ html, body {
   padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
+/* ── スケジュールタイトル右側 (ミニ達成率 + 履歴) ── */
+.title-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stats-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--card2);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  font-family: var(--font);
+  letter-spacing: 0.02em;
+}
+.stats-badge-pct {
+  color: var(--green);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+/* ── 中間スペーサー (スケジュールと+追加の間) ── */
+.mid-spacer {
+  height: 60px;
+}
+
 /* ── 取り消しボタン (完了直後カード用) ── */
 .card-undo-btn {
   flex: 1;
@@ -1719,10 +1749,10 @@ html, body {
 }
 .hist-restore:active { opacity: 0.85; }
 
-/* ── メモセクション (一番下・余白多め) ── */
+/* ── メモセクション (一番下) ── */
 .memo-section {
-  margin-top: 32px;
-  padding-top: 16px;
+  margin-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 .memo-section .section-title-row {

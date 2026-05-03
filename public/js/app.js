@@ -369,25 +369,12 @@ function stats() {
 function tOpts(){const r=[];for(let h=0;h<24;h++)for(let m=0;m<60;m+=10)r.push(`${p2(h)}:${p2(m)}`);return r;}
 function tSel(name,val){return `<select class="tsel" name="${name}">${tOpts().map(t=>`<option value="${t}"${t===val?' selected':''}>${t}</option>`).join('')}</select>`;}
 
-// ── Render: Compact stats footer (達成率 + ご褒美) ──
-function renderStatsFooter() {
+// ── Render: Mini stats badge (タイトル横に小さく) ──
+function renderStatsBadge() {
   const st = stats();
   if (st.total === 0) return '';
   const pct = ~~(st.done / st.total * 100);
-  const reward = S.reward || { thresholdPct: 80, durationMin: 30 };
-  const rewardOK = pct >= reward.thresholdPct;
-  const rewardLine = rewardOK
-    ? `🎁 <b>${reward.durationMin}分のご褒美</b> 獲得！`
-    : `🎁 ${reward.durationMin}分まで あと ${reward.thresholdPct - pct}%`;
-  return `<div class="stats-footer">
-    <div class="sf-row">
-      <span class="sf-pct">${pct}%</span>
-      <span class="sf-text">${st.done}/${st.total} 完了</span>
-      <button class="sf-reward-edit" id="reward-edit" title="ご褒美設定">⚙︎</button>
-    </div>
-    <div class="stat-track"><div class="stat-fill" style="width:${pct}%"></div></div>
-    <div class="sf-reward">${rewardLine}</div>
-  </div>`;
+  return `<span class="stats-badge">✓ ${st.done}/${st.total}<span class="stats-badge-pct">${pct}%</span></span>`;
 }
 
 // ── やることリストのコンテンツ部分 ────────────────
@@ -473,7 +460,10 @@ function renderSchedule() {
     : `<div class="list">${visibleTasks.map(renderCard).join('')}</div>`;
   const scheduleSection = `<div class="section-title-row section-title-main">
     <h3 class="section-title section-title-lg">⏱ スケジュール <span class="section-sub">${visibleTasks.length}件</span></h3>
-    ${hiddenCount>0 ? `<button class="history-link" id="btn-history">📂 完了履歴 ${hiddenCount}</button>` : ''}
+    <div class="title-right">
+      ${renderStatsBadge()}
+      ${hiddenCount>0 ? `<button class="history-link" id="btn-history">📂 ${hiddenCount}</button>` : ''}
+    </div>
   </div>
   ${scheduleContent}`;
 
@@ -496,10 +486,9 @@ function renderSchedule() {
   return `<div class="main-wrapper">
     ${header}
     ${scheduleSection}
-    ${renderStatsFooter()}
+    <div class="mid-spacer"></div>
     ${bottomBar}
     ${memoSection}
-    ${S.rewardSettingOpen ? renderRewardSetting() : ''}
     ${S.historyOpen ? renderHistory() : ''}
   </div>`;
 }
