@@ -1775,3 +1775,27 @@ html, body {
 
 /* card-body の元のpaddingを上書き (card-row 内に入ったため) */
 .card .card-body { padding: 0; }
+
+/* ════════════════════════════════════════
+   ★ v6: スケジュール上・やること下の構成
+   ════════════════════════════════════════ */
+
+/* スケジュール側のセクションタイトルを大きく */
+.section-title-lg {
+  font-size: 16px !important;
+  color: var(--text) !important;
+  font-weight: 800 !important;
+}
+/* セクションタイトルの右側ヒント */
+.section-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: 0;
+}
+/* スケジュール空状態のアイコン */
+.section-empty-icon {
+  font-size: 24px;
+  margin-bottom: 6px;
+  opacity: 0.5;
+}

@@ -449,24 +449,27 @@ function renderSchedule() {
     <div class="header-date">${fDate(S.date)}</div>
   </div>`;
 
-  // 中: やること
-  const todoSection = `<div class="section-title-row">
-    <h3 class="section-title">✓ やること <span class="section-sub">${S.todos.filter(t=>!t.done).length}件</span></h3>
-  </div>
-  ${renderTodoList()}`;
-
-  // 下: スケジュール
+  // ★ 上: スケジュール (1日のメイン情報・大きく表示)
   const scheduleContent = S.tasks.length === 0
     ? `<div class="section-empty">
-        <div class="section-empty-text">時間を決めると<br>ここに表示されます</div>
+        <div class="section-empty-icon">⏱</div>
+        <div class="section-empty-text">今日の予定はまだありません<br>「+ 追加」または下の「やること」に 🕐 で時間を設定</div>
        </div>`
     : `<div class="list">${S.tasks.map(renderCard).join('')}</div>`;
-  const scheduleSection = `<div class="section-title-row">
-    <h3 class="section-title">⏱ スケジュール <span class="section-sub">${S.tasks.length}件</span></h3>
+  const scheduleSection = `<div class="section-title-row section-title-main">
+    <h3 class="section-title section-title-lg">⏱ スケジュール <span class="section-sub">${S.tasks.length}件</span></h3>
   </div>
   ${scheduleContent}`;
 
-  // 下部バー: + 追加 (シンプル)
+  // ★ 下: やること (時間未定のメモ・🕐 で時間設定 → スケジュールへ)
+  const pendingTodoCnt = S.todos.filter(t=>!t.done).length;
+  const todoSection = `<div class="section-title-row">
+    <h3 class="section-title">✓ やること <span class="section-sub">${pendingTodoCnt}件</span></h3>
+    ${pendingTodoCnt>0 ? '<span class="section-hint">🕐 で時間を設定 → スケジュール化</span>' : ''}
+  </div>
+  ${renderTodoList()}`;
+
+  // 下部バー: + 追加
   const bottomBar = `<div class="bottom-bar">
     <button class="bar-btn primary" id="btn-add">＋ 追加</button>
     ${S.tasks.length>0?'<button class="bar-btn" id="btn-review">振り返り</button>':''}
@@ -474,8 +477,8 @@ function renderSchedule() {
 
   return `<div class="main-wrapper">
     ${header}
-    ${todoSection}
     ${scheduleSection}
+    ${todoSection}
     ${renderStatsFooter()}
     ${bottomBar}
     ${S.rewardSettingOpen ? renderRewardSetting() : ''}
