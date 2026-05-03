@@ -2,6 +2,7 @@
 
 const CIRC = 2 * Math.PI * 96; // r=96
 const STORE = 'dp_';
+const HIDE_DELAY = 10000; // 完了後この時間でカードが自動非表示 (ms)
 const tKey = d => `${STORE}tasks_${d}`;
 const todKey = d => `${STORE}todo_${d}`;
 const TMPL_KEY  = `${STORE}templates`;
@@ -33,6 +34,9 @@ const S = {
   audioCtx: null,
   // ── オーバーレイ ─────────────────────────
   rewardSettingOpen: false,
+  historyOpen: false,
+  // ── 完了タスク自動非表示用 ──────────────
+  hideTimer: null,
 };
 
 // ── タスク重さ定義 ──────────────────────────────────
@@ -448,15 +452,28 @@ function renderSchedule() {
     <div class="header-date">${fDate(S.date)}</div>
   </div>`;
 
+  // ★ 完了から10秒経過したタスクは自動非表示 (今日のみ・履歴に保存される)
+  const isToday2 = S.date === today();
+  const nowMs = Date.now();
+  const visibleTasks = S.tasks.filter(t => {
+    if (t.status !== 'done') return true;
+    if (!isToday2) return true;            // 過去/未来日は隠さず表示
+    if (!t.completedAt) return true;       // 旧データ (completedAt なし) は表示
+    return (nowMs - t.completedAt) < HIDE_DELAY;
+  });
+  // 履歴件数 (今日完了したタスクのうち画面から消えたもの)
+  const hiddenCount = S.tasks.filter(t => t.status==='done' && t.completedAt && isToday2 && (nowMs - t.completedAt) >= HIDE_DELAY).length;
+
   // ★ 上: スケジュール (1日のメイン情報・大きく表示)
-  const scheduleContent = S.tasks.length === 0
+  const scheduleContent = visibleTasks.length === 0
     ? `<div class="section-empty">
         <div class="section-empty-icon">⏱</div>
         <div class="section-empty-text">今日の予定はまだありません<br>「+ 追加」で予定を作成</div>
        </div>`
-    : `<div class="list">${S.tasks.map(renderCard).join('')}</div>`;
+    : `<div class="list">${visibleTasks.map(renderCard).join('')}</div>`;
   const scheduleSection = `<div class="section-title-row section-title-main">
-    <h3 class="section-title section-title-lg">⏱ スケジュール <span class="section-sub">${S.tasks.length}件</span></h3>
+    <h3 class="section-title section-title-lg">⏱ スケジュール <span class="section-sub">${visibleTasks.length}件</span></h3>
+    ${hiddenCount>0 ? `<button class="history-link" id="btn-history">📂 完了履歴 ${hiddenCount}</button>` : ''}
   </div>
   ${scheduleContent}`;
 
@@ -483,6 +500,36 @@ function renderSchedule() {
     ${bottomBar}
     ${memoSection}
     ${S.rewardSettingOpen ? renderRewardSetting() : ''}
+    ${S.historyOpen ? renderHistory() : ''}
+  </div>`;
+}
+
+// ── Render: 完了履歴オーバーレイ ────────────────
+function renderHistory() {
+  const items = S.tasks
+    .filter(t => t.status==='done' && t.completedAt)
+    .sort((a,b) => (b.completedAt||0) - (a.completedAt||0));
+  const fmtTime = (ms) => {
+    const d = new Date(ms);
+    return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  };
+  const list = items.length === 0
+    ? `<div class="hist-empty">完了したスケジュールはまだありません</div>`
+    : items.map(t => `<div class="hist-item">
+        <div class="hist-row1">
+          <div class="hist-title">${esc(t.title)}</div>
+          <button class="hist-restore" data-restore="${t.id}">↩ 戻す</button>
+        </div>
+        <div class="hist-meta">${t.startTime}〜${t.endTime} · 完了 ${fmtTime(t.completedAt)}</div>
+      </div>`).join('');
+  return `<div class="overlay" id="history-overlay">
+    <div class="overlay-card">
+      <div class="overlay-head">
+        📂 完了履歴 (${fDate(S.date)})
+        <button class="overlay-close" id="hist-close">×</button>
+      </div>
+      <div class="hist-list">${list}</div>
+    </div>
   </div>`;
 }
 
@@ -522,9 +569,14 @@ function renderCard(t) {
   else if(isDone)               cls+=' is-done';
   else if(t.status==='skipped') cls+=' is-skipped';
 
+  // 完了直後は「取り消し」ヒント (10秒以内のみ)
+  const inUndoWindow = isDone && t.completedAt && (Date.now() - t.completedAt) < HIDE_DELAY;
+  const doneMeta = inUndoWindow
+    ? `<div class="card-meta card-done-text">✓ 完了 · まもなく履歴へ</div>`
+    : `<div class="card-meta card-done-text">✓ 完了</div>`;
   const meta = isActive
     ? `<div class="card-meta card-timer-text" id="mini-${t.id}">計測中...</div>`
-    : (isDone ? `<div class="card-meta card-done-text">✓ 完了</div>` : '');
+    : (isDone ? doneMeta : '');
 
   const canStart = t.status==='pending'||isActive;
   const startLabel = isActive ? '▶ タイマーを開く' : '▶ 開始する';
@@ -543,7 +595,9 @@ function renderCard(t) {
       </div>
     </div>
     <div class="card-footer">
-      ${canStart?`<button class="card-start-btn" data-id="${t.id}">${startLabel}</button>`:'<div style="flex:1"></div>'}
+      ${inUndoWindow
+        ? `<button class="card-undo-btn" data-undo="${t.id}">↩ 取り消し</button>`
+        : (canStart?`<button class="card-start-btn" data-id="${t.id}">${startLabel}</button>`:'<div style="flex:1"></div>')}
       <button class="card-edit-btn" data-edit="${t.id}">編集</button>
     </div>
   </div>`;
@@ -779,6 +833,19 @@ function renderForm() {
 }
 
 // ── Render ────────────────────────────────────────
+// ── 完了タスク自動非表示スケジューラ ──────────────
+function scheduleAutoHide() {
+  if (S.hideTimer) { clearTimeout(S.hideTimer); S.hideTimer=null; }
+  // 表示中の done タスクで最も古い completedAt から 10秒経過時に再描画
+  const now = Date.now();
+  const upcoming = S.tasks
+    .filter(t => t.status==='done' && t.completedAt && (now - t.completedAt) < HIDE_DELAY)
+    .map(t => HIDE_DELAY - (now - t.completedAt));
+  if (upcoming.length === 0) return;
+  const next = Math.max(50, Math.min(...upcoming) + 50);
+  S.hideTimer = setTimeout(() => { S.hideTimer=null; render(); }, next);
+}
+
 function render() {
   stopRAF();
   const app=document.getElementById('app');
@@ -883,14 +950,42 @@ function bind() {
       if (t.status==='done') {
         // 未完了に戻す
         t.status='pending';
+        t.completedAt=null;
       } else {
         // 完了にする (アクティブなら停止)
         t.status='done';
+        t.completedAt=Date.now();
         t.timerStartedAt=null;
         if (S.activeId===id) { S.activeId=null; stopRAF(); stopBg(); }
+        // 10秒後に自動で画面から非表示
+        scheduleAutoHide();
       }
       save(); scheduleAlarms(); render();
     }));
+    // ★ 取り消し (10秒以内) ──
+    all('[data-undo]',btn=>btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const id=e.currentTarget.dataset.undo;
+      const t=S.tasks.find(x=>x.id===id); if(!t)return;
+      t.status='pending';
+      t.completedAt=null;
+      save(); scheduleAlarms(); render();
+    }));
+    // ★ 完了履歴オープン/クローズ ──
+    on('btn-history',()=>{ S.historyOpen=true; render(); });
+    on('hist-close',()=>{ S.historyOpen=false; render(); });
+    all('[data-restore]',btn=>btn.addEventListener('click',e=>{
+      e.stopPropagation();
+      const id=e.currentTarget.dataset.restore;
+      const t=S.tasks.find(x=>x.id===id); if(!t)return;
+      t.status='pending';
+      t.completedAt=null;
+      S.historyOpen=false;
+      save(); scheduleAlarms(); render();
+    }));
+
+    // 完了タスクの自動非表示タイマー再設定 (描画毎)
+    scheduleAutoHide();
 
     // ── やること操作 (一画面に集約) ──────────
     const addTodo=()=>{

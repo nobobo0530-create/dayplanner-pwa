@@ -1625,6 +1625,100 @@ html, body {
   padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
+/* ── 取り消しボタン (完了直後カード用) ── */
+.card-undo-btn {
+  flex: 1;
+  background: var(--card2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.card-undo-btn:active { opacity: 0.85; }
+
+/* ── 完了履歴リンク (スケジュールタイトル横) ── */
+.history-link {
+  background: var(--card2);
+  border: none;
+  border-radius: 99px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+  cursor: pointer;
+  font-family: var(--font);
+}
+.history-link:active { opacity: 0.8; }
+
+/* ── 完了履歴オーバーレイ ── */
+#history-overlay .overlay-card {
+  max-width: 420px;
+  width: 92%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+#history-overlay .overlay-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-right: 8px;
+}
+.overlay-close {
+  background: var(--card2);
+  border: none;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text2);
+  font-family: var(--font);
+}
+.hist-list { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.hist-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text3);
+  font-size: 14px;
+}
+.hist-item {
+  background: var(--card2);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.hist-row1 {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 4px;
+}
+.hist-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-meta {
+  font-size: 11px;
+  color: var(--text2);
+}
+.hist-restore {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font);
+  flex-shrink: 0;
+}
+.hist-restore:active { opacity: 0.85; }
+
 /* ── メモセクション (一番下・余白多め) ── */
 .memo-section {
   margin-top: 32px;
