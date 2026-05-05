@@ -17,6 +17,8 @@ input, textarea, select { -webkit-user-select: auto; }
   --redbg:   rgba(255,59,48,0.10);
   --green:   #34C759;
   --greenbg: rgba(52,199,89,0.10);
+  --blue:    #007AFF;
+  --bluebg:  rgba(0,122,255,0.10);
   --radius:  16px;
   --shadow:  0 1px 0 rgba(0,0,0,0.03), 0 2px 6px rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.05);
   --font:    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', sans-serif;
@@ -1755,15 +1757,20 @@ html, body {
 }
 .hist-restore:active { opacity: 0.85; }
 
-/* ── メモセクション (一番下・コンパクト) ── */
+/* ── メモセクション (一番下・コンパクト・青ベース) ── */
 .memo-section {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+  background: var(--bluebg);
 }
 .memo-section .section-title-row {
   padding: 4px 16px;
   margin-bottom: 0;
+  color: var(--blue);
+}
+.memo-section .section-title-row .section-title {
+  color: var(--blue);
 }
 .memo-section .todo-screen {
   padding: 4px 16px calc(16px + env(safe-area-inset-bottom, 0px));
@@ -1774,6 +1781,17 @@ html, body {
 .memo-section .todo-input {
   padding: 10px 14px;
   font-size: 14px;
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.memo-section .todo-input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px var(--bluebg);
+}
+.memo-section .todo-item {
+  background: var(--card);
+  border-color: var(--blue);
+  color: var(--blue);
 }
 
 /* ── メインヘッダー (日付 + 前後日ナビ) ─── */

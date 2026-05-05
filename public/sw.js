@@ -1,5 +1,5 @@
-// デイプラン Service Worker v3 - network-first + 通知クリック対応
-const CACHE = 'dayplanner-v3';
+// デイプラン Service Worker v4 - メモ青色化
+const CACHE = 'dayplanner-v4';
 const ASSETS = [
   '/',
   '/index.html',
