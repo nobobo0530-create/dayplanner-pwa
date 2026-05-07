@@ -1,6 +1,6 @@
 {
-  "name": "タスク管理",
-  "short_name": "タスク管理",
+  "name": "スケジュール管理",
+  "short_name": "スケジュール管理",
   "description": "時間軸ベースの行動管理アプリ",
   "start_url": "/",
   "scope": "/",
