@@ -1,5 +1,5 @@
-// デイプラン Service Worker v4 - メモ青色化
-const CACHE = 'dayplanner-v4';
+// デイプラン Service Worker v5 - アイコン更新
+const CACHE = 'dayplanner-v5';
 const ASSETS = [
   '/',
   '/index.html',
