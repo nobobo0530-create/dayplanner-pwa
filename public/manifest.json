@@ -1,6 +1,6 @@
 {
-  "name": "デイプラン - 行動管理",
-  "short_name": "デイプラン",
+  "name": "タスク管理",
+  "short_name": "タスク管理",
   "description": "時間軸ベースの行動管理アプリ",
   "start_url": "/",
   "scope": "/",
