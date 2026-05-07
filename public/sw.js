@@ -1,5 +1,5 @@
-// デイプラン Service Worker v6 - アイコンv2
-const CACHE = 'dayplanner-v6';
+// デイプラン Service Worker v7 - apple-touch-icon更新
+const CACHE = 'dayplanner-v7';
 const ASSETS = [
   '/',
   '/index.html',
@@ -71,7 +71,7 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  const isAsset = /\.(html|js|css)$/.test(url.pathname) || url.pathname === '/';
+  const isAsset = /\.(html|js|css|json)$/.test(url.pathname) || url.pathname === '/';
 
   if (isAsset) {
     e.respondWith(
