@@ -1,13 +1,13 @@
-// デイプラン Service Worker v5 - アイコン更新
-const CACHE = 'dayplanner-v5';
+// デイプラン Service Worker v6 - アイコンv2
+const CACHE = 'dayplanner-v6';
 const ASSETS = [
   '/',
   '/index.html',
   '/css/style.css',
   '/js/app.js',
   '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+  '/icons/icon-192-v2.png',
+  '/icons/icon-512-v2.png',
   '/apple-touch-icon.png',
 ];
 
